@@ -39,14 +39,23 @@ export async function isLocalAuthenticator(): Promise<boolean> {
 async function getAuthAttachment(
   authType: AuthType
 ): Promise<AuthenticatorAttachment | undefined> {
-  if (authType === 'local') return 'platform';
-  if (authType === 'roaming' || authType === 'extern') return 'cross-platform';
-  if (authType === 'both') return undefined; // The webauthn protocol considers `null` as invalid but `undefined` as "both"!
+  if (authType === 'local') {
+    return 'platform';
+  }
+  if (authType === 'roaming' || authType === 'extern') {
+    return 'cross-platform';
+  }
+  if (authType === 'both') {
+    return undefined;
+  } // The webauthn protocol considers `null` as invalid but `undefined` as "both"!
 
   // the default case: "auto", depending on device capabilities
   try {
-    if (await isLocalAuthenticator()) return 'platform';
-    else return 'cross-platform';
+    if (await isLocalAuthenticator()) {
+      return 'platform';
+    } else {
+      return 'cross-platform';
+    }
   } catch (e) {
     // might happen due to some security policies
     // see https://w3c.github.io/webauthn/#sctn-isUserVerifyingPlatformAuthenticatorAvailable
@@ -89,8 +98,9 @@ export async function register(
 ): Promise<RegistrationEncoded> {
   options = options ?? {};
 
-  if (!utils.isBase64url(challenge))
+  if (!utils.isBase64url(challenge)) {
     throw new Error('Provided challenge is not properly encoded in Base64url');
+  }
 
   const creationOptions: PublicKeyCredentialCreationOptions = {
     challenge: utils.parseBase64url(challenge),
@@ -124,13 +134,17 @@ export async function register(
     }
   };
 
-  if (options.debug) console.debug(creationOptions);
+  if (options.debug) {
+    console.debug(creationOptions);
+  }
 
   const credential = (await navigator.credentials.create({
     publicKey: creationOptions
   })) as PublicKeyCredential;
 
-  if (options.debug) console.debug(credential);
+  if (options.debug) {
+    console.debug(credential);
+  }
 
   const response = credential.response as AuthenticatorAttestationResponse;
 
@@ -184,14 +198,23 @@ async function getTransports(
   //@ts-ignore
   const roaming: AuthenticatorTransport[] = ['hybrid', 'usb', 'ble', 'nfc'];
 
-  if (authType === 'local') return local;
-  if (authType == 'roaming' || authType === 'extern') return roaming;
-  if (authType === 'both') return [...local, ...roaming];
+  if (authType === 'local') {
+    return local;
+  }
+  if (authType == 'roaming' || authType === 'extern') {
+    return roaming;
+  }
+  if (authType === 'both') {
+    return [...local, ...roaming];
+  }
 
   // the default case: "auto", depending on device capabilities
   try {
-    if (await isLocalAuthenticator()) return local;
-    else return roaming;
+    if (await isLocalAuthenticator()) {
+      return local;
+    } else {
+      return roaming;
+    }
   } catch (e) {
     return [...local, ...roaming];
   }
@@ -214,8 +237,9 @@ export async function authenticate(
 ): Promise<AuthenticationEncoded> {
   options = options ?? {};
 
-  if (!utils.isBase64url(challenge))
+  if (!utils.isBase64url(challenge)) {
     throw new Error('Provided challenge is not properly encoded in Base64url');
+  }
 
   const transports = await getTransports(options.authenticatorType ?? 'auto');
 
@@ -240,14 +264,18 @@ export async function authenticate(
     }
   };
 
-  if (options.debug) console.debug(authOptions);
+  if (options.debug) {
+    console.debug(authOptions);
+  }
 
   const auth = (await navigator.credentials.get({
     publicKey: authOptions,
     mediation: options.mediation
   })) as PublicKeyCredential;
 
-  if (options.debug) console.debug(auth);
+  if (options.debug) {
+    console.debug(auth);
+  }
 
   const response = auth.response as AuthenticatorAssertionResponse;
 

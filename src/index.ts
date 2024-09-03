@@ -1,1 +1,1 @@
-export * from "./passkeyProvider";
+export * from './passkeyProvider';
