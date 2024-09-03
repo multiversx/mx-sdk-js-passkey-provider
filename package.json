@@ -1,7 +1,7 @@
 {
-  "name": "@multiversx/sdk-web-wallet-iframe-provider",
+  "name": "@multiversx/sdk-passkey-provider",
   "version": "1.0.0",
-  "description": "Signing provider for dApps: Web Wallet Iframe Provider",
+  "description": "Signing provider for dApps: Passkey Provider",
   "main": "out/index.js",
   "types": "out/index.d.js",
   "files": [
