@@ -148,7 +148,7 @@ export class PasskeyProvider {
     );
     this.setUserKeyPair(extensionResults);
 
-    return this.login({ walletName, token });
+    return this.login({ token });
   }
 
   public async isExistingUser(email: string) {
