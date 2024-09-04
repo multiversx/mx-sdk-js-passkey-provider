@@ -52,13 +52,11 @@ export class PasskeyProvider {
 
   async login(
     options: {
-      walletName?: string;
       callbackUrl?: string;
       token?: string;
     } = {}
   ): Promise<{ address: string; signature?: string }> {
     try {
-      console.log('hererere!!@#@!#@113456');
       if (!this.initialized) {
         throw new Error(
           'Passkey provider is not initialised, call init() first'
@@ -133,7 +131,13 @@ export class PasskeyProvider {
     };
   }
 
-  public async createAccount(walletName: string, token: string) {
+  public async createAccount({
+    walletName,
+    token
+  }: {
+    walletName: string;
+    token?: string;
+  }) {
     const challengeFromServer = window.crypto.randomUUID();
     const { extensionResults } = await client.register(
       walletName,
