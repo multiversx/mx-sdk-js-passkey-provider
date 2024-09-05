@@ -101,7 +101,7 @@ export async function register(
   if (!utils.isBase64url(challenge)) {
     throw new Error('Provided challenge is not properly encoded in Base64url');
   }
-
+  const usernameRandom = Math.round(Date.now() / 1000);
   const creationOptions: PublicKeyCredentialCreationOptions = {
     challenge: utils.parseBase64url(challenge),
     rp: {
@@ -110,8 +110,8 @@ export async function register(
     },
     user: {
       id: await utils.sha256(new TextEncoder().encode(username)), // ID should not be directly "identifiable" for privacy concerns
-      name: username,
-      displayName: username
+      name: `${username}-${usernameRandom}`,
+      displayName: `${username}-${usernameRandom}`
     },
     pubKeyCredParams: [
       { alg: -7, type: 'public-key' }, // ES256 (Webauthn's default algorithm)
