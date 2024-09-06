@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
+import ShortUniqueId from 'short-unique-id';
 import {
   AuthenticateOptions,
   AuthenticationEncoded,
@@ -101,7 +102,8 @@ export async function register(
   if (!utils.isBase64url(challenge)) {
     throw new Error('Provided challenge is not properly encoded in Base64url');
   }
-  const usernameRandom = Math.round(Date.now() / 1000);
+  const uid = new ShortUniqueId({ length: 5 });
+  const usernameRandom = uid.rnd();
   const creationOptions: PublicKeyCredentialCreationOptions = {
     challenge: utils.parseBase64url(challenge),
     rp: {
