@@ -64,6 +64,15 @@ async function getAuthAttachment(
   }
 }
 
+const getDomainWithoutSubdomain = (url: string) => {
+  const urlParts = new URL(url).hostname.split('.');
+
+  return urlParts
+    .slice(0)
+    .slice(-(urlParts.length === 4 ? 3 : 2))
+    .join('.');
+};
+
 function getAlgoName(num: NumAlgo): NamedAlgo {
   switch (num) {
     case -7:
@@ -107,8 +116,8 @@ export async function register(
   const creationOptions: PublicKeyCredentialCreationOptions = {
     challenge: utils.parseBase64url(challenge),
     rp: {
-      id: window.location.hostname,
-      name: window.location.hostname
+      id: getDomainWithoutSubdomain(window.location.href),
+      name: getDomainWithoutSubdomain(window.location.href)
     },
     user: {
       id: await utils.sha256(new TextEncoder().encode(username)), // ID should not be directly "identifiable" for privacy concerns
