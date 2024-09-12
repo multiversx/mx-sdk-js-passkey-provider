@@ -256,7 +256,7 @@ export async function authenticate(
 
   const authOptions: PublicKeyCredentialRequestOptions = {
     challenge: utils.parseBase64url(challenge),
-    rpId: window.location.hostname,
+    rpId: getDomainWithoutSubdomain(window.location.href),
     allowCredentials: credentialIds.map((id) => {
       return {
         id: utils.parseBase64url(id),
