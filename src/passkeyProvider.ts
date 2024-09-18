@@ -2,6 +2,10 @@ import { Address } from '@multiversx/sdk-core/out';
 import { SignableMessage } from '@multiversx/sdk-core/out/signableMessage';
 import { Transaction } from '@multiversx/sdk-core/out/transaction';
 import { UserSecretKey, UserSigner } from '@multiversx/sdk-wallet/out';
+import { getPublicKey } from '@noble/ed25519';
+import * as ed from '@noble/ed25519';
+import { sha512 } from '@noble/hashes/sha512';
+
 import {
   AuthenticatorNotSupported,
   ErrCannotSignSingleTransaction
@@ -19,6 +23,8 @@ interface SignMessageParams {
   address?: string;
   privateKey: string;
 }
+
+ed.etc.sha512Sync = sha512;
 
 export class PasskeyProvider {
   public account: IPasskeyAccount = { address: '' };
@@ -116,18 +122,59 @@ export class PasskeyProvider {
 
     return messageToSign;
   }
+  // Derive the private key seed using HKDF (Web Crypto API)
+  private async derivePrivateKeySeed(
+    prfOutput: Uint8Array
+  ): Promise<Uint8Array> {
+    // Import the PRF output as a CryptoKey
+    const keyMaterial = await window.crypto.subtle.importKey(
+      'raw',
+      prfOutput.buffer,
+      'HKDF',
+      false,
+      ['deriveBits']
+    );
 
-  public setUserKeyPair(inputKeyMaterial: Uint8Array) {
-    const privateKey = new UserSecretKey(inputKeyMaterial);
-    const publicKey = privateKey.generatePublicKey().toAddress().bech32();
-    if (this.account.address && publicKey !== this.account.address) {
-      throw new Error(
-        `Wrong address. Please use the passkey for ${this.account.address}`
-      );
-    }
+    //should be hardcoded in order to have deterministic output
+    const salt = new Uint8Array([]); // Empty salt
+    const info = new TextEncoder().encode('Ed25519 Key Generation');
+
+    const derivedBitsBuffer = await window.crypto.subtle.deriveBits(
+      {
+        name: 'HKDF',
+        hash: 'SHA-256',
+        salt: salt.buffer,
+        info: info.buffer
+      },
+      keyMaterial,
+      256 // Length in bits
+    );
+
+    return new Uint8Array(derivedBitsBuffer);
+  }
+
+  // Generate the Ed25519 key pair
+  private async generateEd25519KeyPair(privateKeySeed: Uint8Array) {
+    const privateKey = privateKeySeed;
+    const publicKey = await getPublicKey(privateKey);
+
+    return {
+      publicKey,
+      privateKey
+    };
+  }
+
+  public async setUserKeyPair(prfOutput: Uint8Array) {
+    const privateKeySeed = await this.derivePrivateKeySeed(prfOutput);
+    const { publicKey, privateKey } =
+      await this.generateEd25519KeyPair(privateKeySeed);
+
+    const userSecretKey = new UserSecretKey(privateKey);
+    const address = new Address(publicKey);
+
     this.keyPair = {
-      privateKey: privateKey.hex(),
-      publicKey
+      privateKey: userSecretKey.hex(),
+      publicKey: address.bech32()
     };
   }
 
@@ -146,7 +193,7 @@ export class PasskeyProvider {
         authenticatorType: 'extern'
       }
     );
-    this.setUserKeyPair(extensionResults);
+    await this.setUserKeyPair(extensionResults);
 
     return this.login({ token });
   }
@@ -217,7 +264,7 @@ export class PasskeyProvider {
       console.log('error', error);
       throw new AuthenticatorNotSupported();
     }
-    this.setUserKeyPair(inputKeyMaterial);
+    await this.setUserKeyPair(inputKeyMaterial);
   }
 
   async signTransactions(transactions: Transaction[]): Promise<Transaction[]> {
