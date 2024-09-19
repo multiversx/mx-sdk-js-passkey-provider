@@ -120,7 +120,9 @@ export async function register(
       name: getDomainWithoutSubdomain(window.location.href)
     },
     user: {
-      id: await utils.sha256(new TextEncoder().encode(username)), // ID should not be directly "identifiable" for privacy concerns
+      id: await utils.sha256(
+        new TextEncoder().encode(`${username}-${usernameRandom}`)
+      ), // ID should not be directly "identifiable" for privacy concerns
       name: `${username}-${usernameRandom}`,
       displayName: `${username}-${usernameRandom}`
     },
