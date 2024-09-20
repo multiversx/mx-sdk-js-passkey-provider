@@ -170,7 +170,7 @@ export class PasskeyProvider {
       await this.generateEd25519KeyPair(privateKeySeed);
 
     const userSecretKey = new UserSecretKey(privateKey);
-    const address = new Address(publicKey);
+    const address = userSecretKey.generatePublicKey().toAddress();
 
     this.keyPair = {
       privateKey: userSecretKey.hex(),
