@@ -20,8 +20,7 @@ import * as utils from './utils.js';
 //generated with crypto.getRandomValues
 const randomness =
   '125,31,50,6,242,196,44,99,212,140,13,135,165,76,139,234,130,235,189,246,131,38,217,236,172,174,67,82,180,79,137,150';
-const salt = new Uint8Array(randomness.split(',').map((str) => parseInt(str)))
-  .buffer;
+const salt = new Uint8Array(randomness.split(',').map((str) => parseInt(str)));
 
 /**
  * Returns whether passwordless authentication is available on this browser/platform or not.
@@ -132,16 +131,16 @@ export async function register(
     ],
     timeout: options.timeout ?? 60000,
     authenticatorSelection: {
+      residentKey: 'required',
+      requireResidentKey: true,
       userVerification: options.userVerification ?? 'required', // Webauthn default is "preferred"
-      authenticatorAttachment: await getAuthAttachment(
-        options.authenticatorType ?? 'auto'
-      )
+      authenticatorAttachment: await getAuthAttachment('auto')
     },
     attestation: 'direct', // options.attestation ? "direct" : "none"
     extensions: {
       prf: {
         eval: {
-          first: salt
+          first: salt.buffer
         }
       }
     }
@@ -271,7 +270,7 @@ export async function authenticate(
     extensions: {
       prf: {
         eval: {
-          first: salt
+          first: salt.buffer
         }
       }
     }
