@@ -1,6 +1,6 @@
 {
   "name": "@multiversx/sdk-passkey-provider",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Signing provider for dApps: Passkey Provider",
   "main": "out/index.js",
   "types": "out/index.d.js",
