@@ -1,7 +1,11 @@
-import { Address } from '@multiversx/sdk-core/out';
-import { SignableMessage } from '@multiversx/sdk-core/out/signableMessage';
+import {
+  Message,
+  UserSecretKey,
+  UserSigner,
+  Address,
+  MessageComputer
+} from '@multiversx/sdk-core';
 import { Transaction } from '@multiversx/sdk-core/out/transaction';
-import { UserSecretKey, UserSigner } from '@multiversx/sdk-wallet/out';
 import { getPublicKey } from '@noble/ed25519';
 import * as ed from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
@@ -82,7 +86,13 @@ export class PasskeyProvider {
           privateKey: this.keyPair.privateKey
         });
 
-        this.account.signature = signedToken.getSignature().toString('hex');
+        if (!signedToken.signature) {
+          throw new Error('Could not sign token');
+        }
+
+        this.account.signature = Buffer.from(signedToken.signature).toString(
+          'hex'
+        );
       }
 
       if (!this.keyPair.publicKey) {
@@ -109,18 +119,25 @@ export class PasskeyProvider {
     message,
     address,
     privateKey
-  }: SignMessageParams): Promise<SignableMessage> {
+  }: SignMessageParams): Promise<Message> {
     const signer = new UserSigner(UserSecretKey.fromString(privateKey));
 
-    const messageToSign = new SignableMessage({
+    const msg = new Message({
       ...(address ? { address: new Address(address) } : {}),
-      message: Buffer.from(message)
+      data: Buffer.from(message)
     });
-    const serializedMessage = messageToSign.serializeForSigning();
-    const signature = await signer.sign(serializedMessage);
-    messageToSign.applySignature(signature);
 
-    return messageToSign;
+    const messageComputer = new MessageComputer();
+
+    const messageToSign = new Uint8Array(
+      messageComputer.computeBytesForSigning(msg)
+    );
+
+    const signature = await signer.sign(Buffer.from(messageToSign));
+
+    msg.signature = new Uint8Array(signature);
+
+    return msg;
   }
   // Derive the private key seed using HKDF (Web Crypto API)
   private async derivePrivateKeySeed(
@@ -166,8 +183,7 @@ export class PasskeyProvider {
 
   public async setUserKeyPair(prfOutput: Uint8Array) {
     const privateKeySeed = await this.derivePrivateKeySeed(prfOutput);
-    const { publicKey, privateKey } =
-      await this.generateEd25519KeyPair(privateKeySeed);
+    const { privateKey } = await this.generateEd25519KeyPair(privateKeySeed);
 
     const userSecretKey = new UserSecretKey(privateKey);
     const address = userSecretKey.generatePublicKey().toAddress();
@@ -270,10 +286,14 @@ export class PasskeyProvider {
   async signTransactions(transactions: Transaction[]): Promise<Transaction[]> {
     await this.ensureConnected();
 
+    const privateKey = this.keyPair?.privateKey;
+
+    if (!privateKey) {
+      throw new Error('Unable to sign transactions');
+    }
+
     try {
-      const signer = new UserSigner(
-        UserSecretKey.fromString(this.keyPair!.privateKey)
-      );
+      const signer = new UserSigner(UserSecretKey.fromString(privateKey));
 
       for (const transaction of transactions) {
         const signature = await signer.sign(transaction.serializeForSigning());
@@ -288,16 +308,21 @@ export class PasskeyProvider {
     }
   }
 
-  async signMessage(message: SignableMessage): Promise<SignableMessage> {
+  async signMessage(message: Message): Promise<Message> {
     await this.ensureConnected();
-    const signedMessage = await this.signMessageWithPrivateKey({
-      message: message.message.toString(),
-      address: this.account.address,
-      privateKey: this.keyPair!.privateKey
-    });
-    const signature = signedMessage.getSignature();
+    const privateKey = this.keyPair?.privateKey;
 
-    message.applySignature(signature);
+    if (!privateKey) {
+      throw new Error('Unable to sign message');
+    }
+
+    const signedMessage = await this.signMessageWithPrivateKey({
+      message: message.data.toString(),
+      address: this.account.address,
+      privateKey
+    });
+
+    message.signature = signedMessage.signature;
 
     this.destroyKeyPair();
     return message;
