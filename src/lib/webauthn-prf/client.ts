@@ -158,6 +158,10 @@ export async function register(
     console.debug(credential);
   }
 
+  if (credential.authenticatorAttachment !== 'platform') {
+    throw new Error('Cross Platform authentication is not supported.');
+  }
+
   const response = credential.response as AuthenticatorAttestationResponse;
 
   const publicKey = (
@@ -287,6 +291,10 @@ export async function authenticate(
 
   if (options.debug) {
     console.debug(auth);
+  }
+
+  if (auth.authenticatorAttachment !== 'platform') {
+    throw new Error('Cross Platform authentication is not supported.');
   }
 
   const response = auth.response as AuthenticatorAssertionResponse;
