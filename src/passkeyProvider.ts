@@ -15,6 +15,13 @@ import {
   ErrCannotSignSingleTransaction
 } from './errors';
 import { client } from './lib/webauthn-prf';
+import axios from 'axios';
+import {
+  PASSKEY_AUTHENTICATE_ENDPOINT,
+  PASSKEY_CHALLENGE_ENDPOINT,
+  PASSKEY_REGISTER_ENDPOINT,
+  PASSKEY_SERVICE_URL
+} from './constants';
 
 interface IPasskeyAccount {
   address: string;
@@ -36,6 +43,7 @@ export class PasskeyProvider {
   private static _instance: PasskeyProvider = new PasskeyProvider();
   private keyPair: { privateKey: string; publicKey: string } | undefined =
     undefined;
+  private axiosInstance = axios.create();
 
   private constructor() {
     if (PasskeyProvider._instance) {
@@ -106,7 +114,6 @@ export class PasskeyProvider {
         signature: this.account.signature
       };
     } catch (error) {
-      console.log('error: ', error);
       throw error;
     }
   }
@@ -201,17 +208,80 @@ export class PasskeyProvider {
     walletName: string;
     token?: string;
   }) {
-    const challengeFromServer = window.crypto.randomUUID();
-    const { extensionResults } = await client.register(
-      walletName,
-      challengeFromServer,
-      {
-        authenticatorType: 'extern'
-      }
+    const {
+      data: { challenge }
+    } = await this.axiosInstance.get(
+      `${PASSKEY_SERVICE_URL}${PASSKEY_CHALLENGE_ENDPOINT}`
     );
+    const {
+      registration: { extensionResults },
+      registrationResponse
+    } = await client.register(walletName, challenge, {
+      authenticatorType: 'extern'
+    });
+
     await this.setUserKeyPair(extensionResults);
 
+    const { data } = await this.axiosInstance.post(
+      `${PASSKEY_SERVICE_URL}${PASSKEY_REGISTER_ENDPOINT}`,
+      {
+        registrationResponse: {
+          ...registrationResponse,
+          clientExtensionResults: {}
+        },
+        challenge,
+        passKeyId: this.keyPair?.publicKey
+      }
+    );
+
+    if (!data.isVerified) {
+      throw new Error('Passkey verification failed');
+    }
+
     return this.login({ token });
+  }
+
+  private async ensureConnected() {
+    if (this.keyPair?.privateKey || this.keyPair?.publicKey) {
+      return;
+    }
+
+    const {
+      data: { challenge }
+    } = await this.axiosInstance.get(
+      `${PASSKEY_SERVICE_URL}${PASSKEY_CHALLENGE_ENDPOINT}`
+    );
+
+    let inputKeyMaterial: Uint8Array;
+    try {
+      const {
+        authentication: { extensionResults },
+        authenticationResponse
+      } = await client.authenticate([], challenge, {
+        userVerification: 'required',
+        authenticatorType: 'extern'
+      });
+      inputKeyMaterial = extensionResults;
+
+      await this.setUserKeyPair(inputKeyMaterial);
+      const { data } = await this.axiosInstance.post(
+        `${PASSKEY_SERVICE_URL}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
+        {
+          authenticationResponse: {
+            ...authenticationResponse,
+            clientExtensionResults: {}
+          },
+          challenge,
+          passKeyId: this.keyPair?.publicKey
+        }
+      );
+
+      if (!data.isVerified) {
+        throw new Error('Passkey verification failed');
+      }
+    } catch (error) {
+      throw new AuthenticatorNotSupported();
+    }
   }
 
   public async isExistingUser(email: string) {
@@ -260,27 +330,6 @@ export class PasskeyProvider {
     }
     this.destroyKeyPair();
     return signedTransactions[0];
-  }
-
-  private async ensureConnected() {
-    if (this.keyPair?.privateKey || this.keyPair?.publicKey) {
-      return;
-    }
-
-    const challengeFromServer = window.crypto.randomUUID();
-    let inputKeyMaterial: Uint8Array;
-    try {
-      const { extensionResults } = await client.authenticate(
-        [],
-        challengeFromServer,
-        { userVerification: 'required', authenticatorType: 'extern' }
-      );
-      inputKeyMaterial = extensionResults;
-    } catch (error) {
-      console.log('error', error);
-      throw new AuthenticatorNotSupported();
-    }
-    await this.setUserKeyPair(inputKeyMaterial);
   }
 
   async signTransactions(transactions: Transaction[]): Promise<Transaction[]> {
