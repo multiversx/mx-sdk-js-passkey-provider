@@ -10,11 +10,6 @@ import { getPublicKey } from '@noble/ed25519';
 import * as ed from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 
-import {
-  AuthenticatorNotSupported,
-  ErrCannotSignSingleTransaction
-} from './errors';
-import { client } from './lib/webauthn-prf';
 import axios from 'axios';
 import {
   PASSKEY_AUTHENTICATE_ENDPOINT,
@@ -22,6 +17,11 @@ import {
   PASSKEY_REGISTER_ENDPOINT,
   PASSKEY_SERVICE_URL
 } from './constants';
+import {
+  AuthenticatorNotSupported,
+  ErrCannotSignSingleTransaction
+} from './errors';
+import { client } from './lib/webauthn-prf';
 
 interface IPasskeyAccount {
   address: string;
