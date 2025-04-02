@@ -15,7 +15,8 @@ import {
   PASSKEY_AUTHENTICATE_ENDPOINT,
   PASSKEY_CHALLENGE_ENDPOINT,
   PASSKEY_REGISTER_ENDPOINT,
-  PASSKEY_SERVICE_URL
+  PASSKEY_SERVICE_URL,
+  safeWindow
 } from './constants';
 import {
   AuthenticatorNotSupported,
@@ -35,6 +36,10 @@ interface SignMessageParams {
   privateKey: string;
 }
 
+// By setting this property, we're telling the library
+// which specific SHA-512 implementation to use
+// when performing cryptographic operations
+// like generating keys and signing data
 ed.etc.sha512Sync = sha512;
 
 export class PasskeyProvider {
@@ -82,7 +87,7 @@ export class PasskeyProvider {
       }
       const { token } = options;
       await this.ensureConnected();
-      if (!this.keyPair?.privateKey && !this.keyPair?.publicKey) {
+      if (!this.keyPair?.privateKey || !this.keyPair?.publicKey) {
         throw new Error('Could not retrieve key pair.');
       }
       this.account.address = this.keyPair.publicKey;
@@ -101,10 +106,6 @@ export class PasskeyProvider {
         this.account.signature = Buffer.from(signedToken.signature).toString(
           'hex'
         );
-      }
-
-      if (!this.keyPair.publicKey) {
-        throw new Error('Login cancelled');
       }
 
       this.destroyKeyPair();
@@ -146,24 +147,29 @@ export class PasskeyProvider {
 
     return msg;
   }
+
   // Derive the private key seed using HKDF (Web Crypto API)
   private async derivePrivateKeySeed(
     prfOutput: Uint8Array
   ): Promise<Uint8Array> {
+    if (!safeWindow) {
+      throw new Error('Web Crypto API is not available');
+    }
+
     // Import the PRF output as a CryptoKey
-    const keyMaterial = await window.crypto.subtle.importKey(
-      'raw',
-      prfOutput.buffer,
-      'HKDF',
-      false,
-      ['deriveBits']
+    const keyMaterial = await safeWindow.crypto.subtle.importKey(
+      'raw', // format of the key material
+      prfOutput.buffer, // the key material
+      'HKDF', // HMAC-based Key Derivation Function
+      false, // non-extractable
+      ['deriveBits'] // keyUsages
     );
 
     //should be hardcoded in order to have deterministic output
     const salt = new Uint8Array([]); // Empty salt
     const info = new TextEncoder().encode('Ed25519 Key Generation');
 
-    const derivedBitsBuffer = await window.crypto.subtle.deriveBits(
+    const derivedBitsBuffer = await safeWindow.crypto.subtle.deriveBits(
       {
         name: 'HKDF',
         hash: 'SHA-256',
@@ -178,9 +184,9 @@ export class PasskeyProvider {
   }
 
   // Generate the Ed25519 key pair
-  private async generateEd25519KeyPair(privateKeySeed: Uint8Array) {
+  private generateEd25519KeyPair(privateKeySeed: Uint8Array) {
     const privateKey = privateKeySeed;
-    const publicKey = await getPublicKey(privateKey);
+    const publicKey = getPublicKey(privateKey);
 
     return {
       publicKey,
@@ -190,7 +196,7 @@ export class PasskeyProvider {
 
   public async setUserKeyPair(prfOutput: Uint8Array) {
     const privateKeySeed = await this.derivePrivateKeySeed(prfOutput);
-    const { privateKey } = await this.generateEd25519KeyPair(privateKeySeed);
+    const { privateKey } = this.generateEd25519KeyPair(privateKeySeed);
 
     const userSecretKey = new UserSecretKey(privateKey);
     const address = userSecretKey.generatePublicKey().toAddress();

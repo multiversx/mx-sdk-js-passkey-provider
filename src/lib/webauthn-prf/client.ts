@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
+// source code: https://github.com/holestorage/webauthn-prf
 import ShortUniqueId from 'short-unique-id';
 import {
   AuthenticateOptions,
@@ -16,11 +17,6 @@ import {
   RegistrationEncoded
 } from './types.js';
 import * as utils from './utils.js';
-import axios from 'axios';
-import {
-  PASSKEY_REGISTER_ENDPOINT,
-  PASSKEY_SERVICE_URL
-} from '../../constants.js';
 
 //generated with crypto.getRandomValues
 const randomness =
@@ -110,7 +106,6 @@ export async function register(
   challenge: string,
   options?: RegisterOptions
 ): Promise<{ registration: RegistrationEncoded; registrationResponse: any }> {
-  const axiosInstance = axios.create();
   options = options ?? {};
 
   if (!utils.isBase64url(challenge)) {
@@ -157,7 +152,7 @@ export async function register(
   }
 
   const credential = (await navigator.credentials.create({
-    publicKey: creationOptions
+    publicKey: creationOptions as any
   })) as PublicKeyCredential;
 
   if (options.debug) {
@@ -305,7 +300,7 @@ export async function authenticate(
   }
 
   const auth = (await navigator.credentials.get({
-    publicKey: authOptions,
+    publicKey: authOptions as any,
     mediation: options.mediation
   })) as PublicKeyCredential;
 
