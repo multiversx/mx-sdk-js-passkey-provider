@@ -1,15 +1,22 @@
 import {
-  Message,
-  UserSecretKey,
-  UserSigner,
   Address,
-  MessageComputer
+  Message,
+  MessageComputer,
+  UserSecretKey,
+  UserSigner
 } from '@multiversx/sdk-core';
 import { Transaction } from '@multiversx/sdk-core/out/transaction';
-import { getPublicKey } from '@noble/ed25519';
 import * as ed from '@noble/ed25519';
+import { getPublicKey } from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 
+import axios from 'axios';
+import {
+  PASSKEY_AUTHENTICATE_ENDPOINT,
+  PASSKEY_CHALLENGE_ENDPOINT,
+  PASSKEY_REGISTER_ENDPOINT,
+  safeWindow
+} from './constants';
 import {
   AuthenticatorNotSupported,
   ErrCannotSignSingleTransaction
@@ -28,6 +35,10 @@ interface SignMessageParams {
   privateKey: string;
 }
 
+// By setting this property, we're telling the library
+// which specific SHA-512 implementation to use
+// when performing cryptographic operations
+// like generating keys and signing data
 ed.etc.sha512Sync = sha512;
 
 export class PasskeyProvider {
@@ -36,6 +47,10 @@ export class PasskeyProvider {
   private static _instance: PasskeyProvider = new PasskeyProvider();
   private keyPair: { privateKey: string; publicKey: string } | undefined =
     undefined;
+  private axiosInstance = axios.create();
+  private config = {
+    extrasApiUrl: ''
+  };
 
   private constructor() {
     if (PasskeyProvider._instance) {
@@ -52,6 +67,11 @@ export class PasskeyProvider {
 
   public setAddress(address: string): PasskeyProvider {
     this.account.address = address;
+    return PasskeyProvider._instance;
+  }
+
+  public setPasskeyServiceUrl(url: string): PasskeyProvider {
+    this.config.extrasApiUrl = url;
     return PasskeyProvider._instance;
   }
 
@@ -74,7 +94,7 @@ export class PasskeyProvider {
       }
       const { token } = options;
       await this.ensureConnected();
-      if (!this.keyPair?.privateKey && !this.keyPair?.publicKey) {
+      if (!this.keyPair?.privateKey || !this.keyPair?.publicKey) {
         throw new Error('Could not retrieve key pair.');
       }
       this.account.address = this.keyPair.publicKey;
@@ -95,10 +115,6 @@ export class PasskeyProvider {
         );
       }
 
-      if (!this.keyPair.publicKey) {
-        throw new Error('Login cancelled');
-      }
-
       this.destroyKeyPair();
 
       return {
@@ -106,7 +122,6 @@ export class PasskeyProvider {
         signature: this.account.signature
       };
     } catch (error) {
-      console.log('error: ', error);
       throw error;
     }
   }
@@ -139,24 +154,29 @@ export class PasskeyProvider {
 
     return msg;
   }
+
   // Derive the private key seed using HKDF (Web Crypto API)
   private async derivePrivateKeySeed(
     prfOutput: Uint8Array
   ): Promise<Uint8Array> {
+    if (!safeWindow) {
+      throw new Error('Web Crypto API is not available');
+    }
+
     // Import the PRF output as a CryptoKey
-    const keyMaterial = await window.crypto.subtle.importKey(
-      'raw',
-      prfOutput.buffer,
-      'HKDF',
-      false,
-      ['deriveBits']
+    const keyMaterial = await safeWindow.crypto.subtle.importKey(
+      'raw', // format of the key material
+      prfOutput.buffer, // the key material
+      'HKDF', // HMAC-based Key Derivation Function
+      false, // non-extractable
+      ['deriveBits'] // keyUsages
     );
 
     //should be hardcoded in order to have deterministic output
     const salt = new Uint8Array([]); // Empty salt
     const info = new TextEncoder().encode('Ed25519 Key Generation');
 
-    const derivedBitsBuffer = await window.crypto.subtle.deriveBits(
+    const derivedBitsBuffer = await safeWindow.crypto.subtle.deriveBits(
       {
         name: 'HKDF',
         hash: 'SHA-256',
@@ -171,9 +191,9 @@ export class PasskeyProvider {
   }
 
   // Generate the Ed25519 key pair
-  private async generateEd25519KeyPair(privateKeySeed: Uint8Array) {
+  private generateEd25519KeyPair(privateKeySeed: Uint8Array) {
     const privateKey = privateKeySeed;
-    const publicKey = await getPublicKey(privateKey);
+    const publicKey = getPublicKey(privateKey);
 
     return {
       publicKey,
@@ -183,7 +203,7 @@ export class PasskeyProvider {
 
   public async setUserKeyPair(prfOutput: Uint8Array) {
     const privateKeySeed = await this.derivePrivateKeySeed(prfOutput);
-    const { privateKey } = await this.generateEd25519KeyPair(privateKeySeed);
+    const { privateKey } = this.generateEd25519KeyPair(privateKeySeed);
 
     const userSecretKey = new UserSecretKey(privateKey);
     const address = userSecretKey.generatePublicKey().toAddress();
@@ -201,17 +221,88 @@ export class PasskeyProvider {
     walletName: string;
     token?: string;
   }) {
-    const challengeFromServer = window.crypto.randomUUID();
-    const { extensionResults } = await client.register(
-      walletName,
-      challengeFromServer,
-      {
-        authenticatorType: 'extern'
-      }
+    if (!this.config.extrasApiUrl) {
+      throw new Error('Passkey service URL is not set');
+    }
+
+    const {
+      data: { challenge }
+    } = await this.axiosInstance.get(
+      `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
     );
+    const {
+      registration: { extensionResults },
+      registrationResponse
+    } = await client.register(walletName, challenge, {
+      authenticatorType: 'extern'
+    });
+
     await this.setUserKeyPair(extensionResults);
 
+    const { data } = await this.axiosInstance.post(
+      `${this.config.extrasApiUrl}${PASSKEY_REGISTER_ENDPOINT}`,
+      {
+        registrationResponse: {
+          ...registrationResponse,
+          clientExtensionResults: {}
+        },
+        challenge,
+        passKeyId: this.keyPair?.publicKey
+      }
+    );
+
+    if (!data.isVerified) {
+      throw new Error('Passkey verification failed');
+    }
+
     return this.login({ token });
+  }
+
+  private async ensureConnected() {
+    if (this.keyPair?.privateKey || this.keyPair?.publicKey) {
+      return;
+    }
+
+    if (!this.config.extrasApiUrl) {
+      throw new Error('Passkey service URL is not set');
+    }
+
+    const {
+      data: { challenge }
+    } = await this.axiosInstance.get(
+      `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
+    );
+
+    let inputKeyMaterial: Uint8Array;
+    try {
+      const {
+        authentication: { extensionResults },
+        authenticationResponse
+      } = await client.authenticate([], challenge, {
+        userVerification: 'required',
+        authenticatorType: 'extern'
+      });
+      inputKeyMaterial = extensionResults;
+
+      const { data } = await this.axiosInstance.post(
+        `${this.config.extrasApiUrl}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
+        {
+          authenticationResponse: {
+            ...authenticationResponse,
+            clientExtensionResults: {}
+          },
+          challenge,
+          passKeyId: this.keyPair?.publicKey
+        }
+      );
+
+      if (!data.isVerified) {
+        throw new Error('Passkey verification failed');
+      }
+      await this.setUserKeyPair(inputKeyMaterial);
+    } catch (error) {
+      throw new AuthenticatorNotSupported();
+    }
   }
 
   public async isExistingUser(email: string) {
@@ -260,27 +351,6 @@ export class PasskeyProvider {
     }
     this.destroyKeyPair();
     return signedTransactions[0];
-  }
-
-  private async ensureConnected() {
-    if (this.keyPair?.privateKey || this.keyPair?.publicKey) {
-      return;
-    }
-
-    const challengeFromServer = window.crypto.randomUUID();
-    let inputKeyMaterial: Uint8Array;
-    try {
-      const { extensionResults } = await client.authenticate(
-        [],
-        challengeFromServer,
-        { userVerification: 'required', authenticatorType: 'extern' }
-      );
-      inputKeyMaterial = extensionResults;
-    } catch (error) {
-      console.log('error', error);
-      throw new AuthenticatorNotSupported();
-    }
-    await this.setUserKeyPair(inputKeyMaterial);
   }
 
   async signTransactions(transactions: Transaction[]): Promise<Transaction[]> {
