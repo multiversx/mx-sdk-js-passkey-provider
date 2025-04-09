@@ -1,13 +1,13 @@
 import {
-  Message,
-  UserSecretKey,
-  UserSigner,
   Address,
-  MessageComputer
+  Message,
+  MessageComputer,
+  UserSecretKey,
+  UserSigner
 } from '@multiversx/sdk-core';
 import { Transaction } from '@multiversx/sdk-core/out/transaction';
-import { getPublicKey } from '@noble/ed25519';
 import * as ed from '@noble/ed25519';
+import { getPublicKey } from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 
 import axios from 'axios';
@@ -269,7 +269,6 @@ export class PasskeyProvider {
       });
       inputKeyMaterial = extensionResults;
 
-      await this.setUserKeyPair(inputKeyMaterial);
       const { data } = await this.axiosInstance.post(
         `${PASSKEY_SERVICE_URL}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
         {
@@ -285,6 +284,7 @@ export class PasskeyProvider {
       if (!data.isVerified) {
         throw new Error('Passkey verification failed');
       }
+      await this.setUserKeyPair(inputKeyMaterial);
     } catch (error) {
       throw new AuthenticatorNotSupported();
     }
