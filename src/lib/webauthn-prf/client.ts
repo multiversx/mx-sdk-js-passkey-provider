@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
+// source code: https://github.com/holestorage/webauthn-prf
 import ShortUniqueId from 'short-unique-id';
 import {
   AuthenticateOptions,
@@ -104,7 +105,7 @@ export async function register(
   username: string,
   challenge: string,
   options?: RegisterOptions
-): Promise<RegistrationEncoded> {
+): Promise<{ registration: RegistrationEncoded; registrationResponse: any }> {
   options = options ?? {};
 
   if (!utils.isBase64url(challenge)) {
@@ -151,7 +152,7 @@ export async function register(
   }
 
   const credential = (await navigator.credentials.create({
-    publicKey: creationOptions
+    publicKey: creationOptions as any
   })) as PublicKeyCredential;
 
   if (options.debug) {
@@ -198,13 +199,24 @@ export async function register(
     )
   };
 
+  const registrationResponseJSON = {
+    id: utils.toBase64url(credential.rawId),
+    rawId: utils.toBase64url(credential.rawId),
+    response: {
+      attestationObject: utils.toBase64url(response.attestationObject),
+      clientDataJSON: utils.toBase64url(response.clientDataJSON)
+    },
+    type: credential.type,
+    clientExtensionResults: credential.getClientExtensionResults()
+  };
+
   if (options.attestation) {
     registration.attestationData = utils.toBase64url(
       response.attestationObject
     );
   }
 
-  return registration;
+  return { registration, registrationResponse: registrationResponseJSON };
 }
 
 async function getTransports(
@@ -250,7 +262,10 @@ export async function authenticate(
   credentialIds: string[],
   challenge: string,
   options?: AuthenticateOptions
-): Promise<AuthenticationEncoded> {
+): Promise<{
+  authentication: AuthenticationEncoded;
+  authenticationResponse: any;
+}> {
   options = options ?? {};
 
   if (!utils.isBase64url(challenge)) {
@@ -285,16 +300,12 @@ export async function authenticate(
   }
 
   const auth = (await navigator.credentials.get({
-    publicKey: authOptions,
+    publicKey: authOptions as any,
     mediation: options.mediation
   })) as PublicKeyCredential;
 
   if (options.debug) {
     console.debug(auth);
-  }
-
-  if (auth.authenticatorAttachment !== 'platform') {
-    throw new Error('Cross Platform authentication is not supported.');
   }
 
   const response = auth.response as AuthenticatorAssertionResponse;
@@ -312,5 +323,20 @@ export async function authenticate(
     )
   };
 
-  return authentication;
+  const authenticationResponseJSON = {
+    id: utils.toBase64url(auth.rawId),
+    rawId: utils.toBase64url(auth.rawId),
+    response: {
+      authenticatorData: utils.toBase64url(response.authenticatorData),
+      clientDataJSON: utils.toBase64url(response.clientDataJSON),
+      signature: utils.toBase64url(response.signature),
+      userHandle: response.userHandle
+        ? utils.toBase64url(response.userHandle)
+        : null
+    },
+    type: auth.type,
+    clientExtensionResults: auth.getClientExtensionResults()
+  };
+
+  return { authentication, authenticationResponse: authenticationResponseJSON };
 }

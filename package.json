@@ -1,6 +1,6 @@
 {
   "name": "@multiversx/sdk-passkey-provider",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "description": "Signing provider for dApps: Passkey Provider",
   "main": "out/index.js",
   "types": "out/index.d.js",
@@ -20,8 +20,9 @@
   "author": "MultiversX",
   "license": "GPL-3.0-or-later",
   "devDependencies": {
-    "@multiversx/sdk-core": ">= 13.12.0",
+    "@multiversx/sdk-core": "^14.x",
     "@types/node": "18.19.0",
+    "axios": ">=1.7.4",
     "@typescript-eslint/eslint-plugin": "5.0.0",
     "@typescript-eslint/parser": "5.14.0",
     "eslint": "8.24.0",
@@ -39,7 +40,8 @@
     "typescript": "5.0.4"
   },
   "peerDependencies": {
-    "@multiversx/sdk-core": ">= 13.12.0"
+    "@multiversx/sdk-core": "^14.x",
+    "axios": ">=1.7.4"
   },
   "dependencies": {
     "@noble/ed25519": "2.1.0",
