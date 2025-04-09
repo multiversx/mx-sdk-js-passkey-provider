@@ -15,7 +15,6 @@ import {
   PASSKEY_AUTHENTICATE_ENDPOINT,
   PASSKEY_CHALLENGE_ENDPOINT,
   PASSKEY_REGISTER_ENDPOINT,
-  PASSKEY_SERVICE_URL,
   safeWindow
 } from './constants';
 import {
@@ -49,6 +48,9 @@ export class PasskeyProvider {
   private keyPair: { privateKey: string; publicKey: string } | undefined =
     undefined;
   private axiosInstance = axios.create();
+  private config = {
+    extrasApiUrl: ''
+  };
 
   private constructor() {
     if (PasskeyProvider._instance) {
@@ -65,6 +67,11 @@ export class PasskeyProvider {
 
   public setAddress(address: string): PasskeyProvider {
     this.account.address = address;
+    return PasskeyProvider._instance;
+  }
+
+  public setPasskeyServiceUrl(url: string): PasskeyProvider {
+    this.config.extrasApiUrl = url;
     return PasskeyProvider._instance;
   }
 
@@ -214,10 +221,14 @@ export class PasskeyProvider {
     walletName: string;
     token?: string;
   }) {
+    if (!this.config.extrasApiUrl) {
+      throw new Error('Passkey service URL is not set');
+    }
+
     const {
       data: { challenge }
     } = await this.axiosInstance.get(
-      `${PASSKEY_SERVICE_URL}${PASSKEY_CHALLENGE_ENDPOINT}`
+      `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
     );
     const {
       registration: { extensionResults },
@@ -229,7 +240,7 @@ export class PasskeyProvider {
     await this.setUserKeyPair(extensionResults);
 
     const { data } = await this.axiosInstance.post(
-      `${PASSKEY_SERVICE_URL}${PASSKEY_REGISTER_ENDPOINT}`,
+      `${this.config.extrasApiUrl}${PASSKEY_REGISTER_ENDPOINT}`,
       {
         registrationResponse: {
           ...registrationResponse,
@@ -252,10 +263,14 @@ export class PasskeyProvider {
       return;
     }
 
+    if (!this.config.extrasApiUrl) {
+      throw new Error('Passkey service URL is not set');
+    }
+
     const {
       data: { challenge }
     } = await this.axiosInstance.get(
-      `${PASSKEY_SERVICE_URL}${PASSKEY_CHALLENGE_ENDPOINT}`
+      `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
     );
 
     let inputKeyMaterial: Uint8Array;
@@ -270,7 +285,7 @@ export class PasskeyProvider {
       inputKeyMaterial = extensionResults;
 
       const { data } = await this.axiosInstance.post(
-        `${PASSKEY_SERVICE_URL}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
+        `${this.config.extrasApiUrl}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
         {
           authenticationResponse: {
             ...authenticationResponse,
