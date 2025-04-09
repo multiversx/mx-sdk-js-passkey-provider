@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [[2.1.0](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/18)] - 2025-04-09
+- [Allow endpoint configuration](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/17)
+
 ## [[2.0.2-alpha.0](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/18)] - 2025-03-04
 - [Enable cross platform authentication](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/18)
 
