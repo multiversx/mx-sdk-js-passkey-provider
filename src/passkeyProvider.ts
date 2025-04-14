@@ -2,10 +2,10 @@ import {
   Address,
   Message,
   MessageComputer,
+  Transaction,
   UserSecretKey,
   UserSigner
 } from '@multiversx/sdk-core';
-import { Transaction } from '@multiversx/sdk-core';
 import * as ed from '@noble/ed25519';
 import { getPublicKey } from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
@@ -201,17 +201,21 @@ export class PasskeyProvider {
     };
   }
 
-  public async setUserKeyPair(prfOutput: Uint8Array) {
+  public async getUserKeyPair(prfOutput: Uint8Array) {
     const privateKeySeed = await this.derivePrivateKeySeed(prfOutput);
     const { privateKey } = this.generateEd25519KeyPair(privateKeySeed);
 
     const userSecretKey = new UserSecretKey(privateKey);
     const address = userSecretKey.generatePublicKey().toAddress();
 
-    this.keyPair = {
+    return {
       privateKey: userSecretKey.hex(),
       publicKey: address.bech32()
     };
+  }
+
+  public async setUserKeyPair(prfOutput: Uint8Array) {
+    this.keyPair = await this.getUserKeyPair(prfOutput);
   }
 
   public async createAccount({
@@ -237,7 +241,7 @@ export class PasskeyProvider {
       authenticatorType: 'extern'
     });
 
-    await this.setUserKeyPair(extensionResults);
+    const keyPairData = await this.getUserKeyPair(extensionResults);
 
     const { data } = await this.axiosInstance.post(
       `${this.config.extrasApiUrl}${PASSKEY_REGISTER_ENDPOINT}`,
@@ -247,13 +251,15 @@ export class PasskeyProvider {
           clientExtensionResults: {}
         },
         challenge,
-        passKeyId: this.keyPair?.publicKey
+        passKeyId: keyPairData?.publicKey
       }
     );
 
     if (!data.isVerified) {
       throw new Error('Passkey verification failed');
     }
+
+    await this.setUserKeyPair(extensionResults);
 
     return this.login({ token });
   }
@@ -284,6 +290,8 @@ export class PasskeyProvider {
       });
       inputKeyMaterial = extensionResults;
 
+      const keyPairData = await this.getUserKeyPair(inputKeyMaterial);
+
       const { data } = await this.axiosInstance.post(
         `${this.config.extrasApiUrl}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
         {
@@ -292,7 +300,7 @@ export class PasskeyProvider {
             clientExtensionResults: {}
           },
           challenge,
-          passKeyId: this.keyPair?.publicKey
+          passKeyId: keyPairData?.publicKey
         }
       );
 
