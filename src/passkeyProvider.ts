@@ -241,7 +241,7 @@ export class PasskeyProvider {
       authenticatorType: 'extern'
     });
 
-    await this.setUserKeyPair(extensionResults);
+    const keyPairData = await this.getUserKeyPair(extensionResults);
 
     const { data } = await this.axiosInstance.post(
       `${this.config.extrasApiUrl}${PASSKEY_REGISTER_ENDPOINT}`,
@@ -251,13 +251,15 @@ export class PasskeyProvider {
           clientExtensionResults: {}
         },
         challenge,
-        passKeyId: this.keyPair?.publicKey
+        passKeyId: keyPairData?.publicKey
       }
     );
 
     if (!data.isVerified) {
       throw new Error('Passkey verification failed');
     }
+
+    await this.setUserKeyPair(extensionResults);
 
     return this.login({ token });
   }
