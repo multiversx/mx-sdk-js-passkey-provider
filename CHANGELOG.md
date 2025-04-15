@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [[3.0.2](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/22)] - 2025-04-15
+- [Fixed signing native auth token](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/22)
+
 ## [[3.0.1](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/21)] - 2025-04-14
 - [Fixed missing passKeyId](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/21)
 

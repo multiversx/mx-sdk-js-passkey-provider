@@ -102,7 +102,7 @@ export class PasskeyProvider {
       if (token) {
         const signedToken = await this.signMessageWithPrivateKey({
           address: this.account.address,
-          message: token,
+          message: `${this.account.address}${token}{}`,
           privateKey: this.keyPair.privateKey
         });
 
