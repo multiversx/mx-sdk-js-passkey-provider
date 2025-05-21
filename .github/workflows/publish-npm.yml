@@ -25,12 +25,15 @@ jobs:
 
       - name: Setup yarn
         run: npm install -g yarn
-  
+
       - name: Install dependencies
         run: yarn install
 
       - name: Build project
-        run: npm run compile
+        run: yarn compile
+
+      - name: Run tests
+        run: yarn test
 
       - name: Get package info
         id: package

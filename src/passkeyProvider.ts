@@ -3,12 +3,13 @@ import {
   Message,
   MessageComputer,
   Transaction,
+  TransactionComputer,
   UserSecretKey,
   UserSigner
 } from '@multiversx/sdk-core';
 import * as ed from '@noble/ed25519';
 import { getPublicKey } from '@noble/ed25519';
-import { sha512 } from '@noble/hashes/sha512';
+import { sha512 } from '@noble/hashes/sha2';
 
 import axios from 'axios';
 import {
@@ -19,7 +20,10 @@ import {
 } from './constants';
 import {
   AuthenticatorNotSupported,
-  ErrCannotSignSingleTransaction
+  ErrCannotSignSingleTransaction,
+  UserCanceledPasskeyOperation,
+  PasskeyAuthenticationFailed,
+  PasskeyRegistrationFailed
 } from './errors';
 import { client } from './lib/webauthn-prf';
 
@@ -229,39 +233,46 @@ export class PasskeyProvider {
       throw new Error('Passkey service URL is not set');
     }
 
-    const {
-      data: { challenge }
-    } = await this.axiosInstance.get(
-      `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
-    );
-    const {
-      registration: { extensionResults },
-      registrationResponse
-    } = await client.register(walletName, challenge, {
-      authenticatorType: 'extern'
-    });
+    try {
+      const {
+        data: { challenge }
+      } = await this.axiosInstance.get(
+        `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
+      );
+      const {
+        registration: { extensionResults },
+        registrationResponse
+      } = await client.register(walletName, challenge, {
+        authenticatorType: 'extern'
+      });
 
-    const keyPairData = await this.getUserKeyPair(extensionResults);
+      const keyPairData = await this.getUserKeyPair(extensionResults);
 
-    const { data } = await this.axiosInstance.post(
-      `${this.config.extrasApiUrl}${PASSKEY_REGISTER_ENDPOINT}`,
-      {
-        registrationResponse: {
-          ...registrationResponse,
-          clientExtensionResults: {}
-        },
-        challenge,
-        passKeyId: keyPairData?.publicKey
+      const { data } = await this.axiosInstance.post(
+        `${this.config.extrasApiUrl}${PASSKEY_REGISTER_ENDPOINT}`,
+        {
+          registrationResponse: {
+            ...registrationResponse,
+            clientExtensionResults: {}
+          },
+          challenge,
+          passKeyId: keyPairData?.publicKey
+        }
+      );
+
+      if (!data.isVerified) {
+        throw new PasskeyRegistrationFailed('Passkey verification failed');
       }
-    );
 
-    if (!data.isVerified) {
-      throw new Error('Passkey verification failed');
+      await this.setUserKeyPair(extensionResults);
+
+      return this.login({ token });
+    } catch (error) {
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Passkey registration'
+      });
     }
-
-    await this.setUserKeyPair(extensionResults);
-
-    return this.login({ token });
   }
 
   private async ensureConnected() {
@@ -273,14 +284,13 @@ export class PasskeyProvider {
       throw new Error('Passkey service URL is not set');
     }
 
-    const {
-      data: { challenge }
-    } = await this.axiosInstance.get(
-      `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
-    );
-
-    let inputKeyMaterial: Uint8Array;
     try {
+      const {
+        data: { challenge }
+      } = await this.axiosInstance.get(
+        `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
+      );
+
       const {
         authentication: { extensionResults },
         authenticationResponse
@@ -288,9 +298,8 @@ export class PasskeyProvider {
         userVerification: 'required',
         authenticatorType: 'extern'
       });
-      inputKeyMaterial = extensionResults;
 
-      const keyPairData = await this.getUserKeyPair(inputKeyMaterial);
+      const keyPairData = await this.getUserKeyPair(extensionResults);
 
       const { data } = await this.axiosInstance.post(
         `${this.config.extrasApiUrl}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
@@ -305,12 +314,59 @@ export class PasskeyProvider {
       );
 
       if (!data.isVerified) {
-        throw new Error('Passkey verification failed');
+        throw new PasskeyAuthenticationFailed('Passkey verification failed');
       }
-      await this.setUserKeyPair(inputKeyMaterial);
+
+      await this.setUserKeyPair(extensionResults);
     } catch (error) {
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Passkey authentication'
+      });
+    }
+  }
+
+  public handlePasskeyErrors({
+    error,
+    operation,
+    cleanupFn
+  }: {
+    error: unknown;
+    operation: string;
+    cleanupFn?: () => void;
+  }): never {
+    if (cleanupFn) {
+      cleanupFn();
+    }
+
+    if (
+      error instanceof UserCanceledPasskeyOperation ||
+      error instanceof AuthenticatorNotSupported ||
+      error instanceof PasskeyAuthenticationFailed ||
+      error instanceof ErrCannotSignSingleTransaction ||
+      error instanceof PasskeyRegistrationFailed
+    ) {
+      throw error;
+    }
+
+    if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      throw new UserCanceledPasskeyOperation();
+    }
+
+    if (
+      error instanceof TypeError ||
+      (error instanceof Error && error.message.includes('prf'))
+    ) {
       throw new AuthenticatorNotSupported();
     }
+
+    console.error(error);
+
+    throw new Error(
+      `${operation} failed: ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }`
+    );
   }
 
   public async isExistingUser(email: string) {
@@ -350,60 +406,82 @@ export class PasskeyProvider {
   }
 
   async signTransaction(transaction: Transaction): Promise<Transaction> {
-    await this.ensureConnected();
+    try {
+      await this.ensureConnected();
 
-    const signedTransactions = await this.signTransactions([transaction]);
+      const signedTransactions = await this.signTransactions([transaction]);
 
-    if (signedTransactions.length != 1) {
-      throw new ErrCannotSignSingleTransaction();
+      if (signedTransactions.length != 1) {
+        throw new ErrCannotSignSingleTransaction();
+      }
+      this.destroyKeyPair();
+      return signedTransactions[0];
+    } catch (error) {
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Transaction signing',
+        cleanupFn: () => this.destroyKeyPair()
+      });
     }
-    this.destroyKeyPair();
-    return signedTransactions[0];
   }
 
   async signTransactions(transactions: Transaction[]): Promise<Transaction[]> {
-    await this.ensureConnected();
-
-    const privateKey = this.keyPair?.privateKey;
-
-    if (!privateKey) {
-      throw new Error('Unable to sign transactions');
-    }
-
     try {
+      await this.ensureConnected();
+
+      const privateKey = this.keyPair?.privateKey;
+
+      if (!privateKey) {
+        throw new Error('Unable to sign transactions');
+      }
+
       const signer = new UserSigner(UserSecretKey.fromString(privateKey));
+      const transactionComputer = new TransactionComputer();
 
       for (const transaction of transactions) {
-        const signature = await signer.sign(transaction.serializeForSigning());
-        transaction.applySignature(signature);
+        const bytesToSign =
+          transactionComputer.computeBytesForSigning(transaction);
+        const signature = await signer.sign(bytesToSign);
+        transaction.signature = new Uint8Array(signature);
       }
+
       this.destroyKeyPair();
       return transactions;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      this.destroyKeyPair();
-      throw new Error(`Transaction canceled: ${error.message}.`);
+    } catch (error) {
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Transaction signing',
+        cleanupFn: () => this.destroyKeyPair()
+      });
     }
   }
 
   async signMessage(message: Message): Promise<Message> {
-    await this.ensureConnected();
-    const privateKey = this.keyPair?.privateKey;
+    try {
+      await this.ensureConnected();
+      const privateKey = this.keyPair?.privateKey;
 
-    if (!privateKey) {
-      throw new Error('Unable to sign message');
+      if (!privateKey) {
+        throw new Error('Unable to sign message');
+      }
+
+      const signedMessage = await this.signMessageWithPrivateKey({
+        message: message.data.toString(),
+        address: this.account.address,
+        privateKey
+      });
+
+      message.signature = signedMessage.signature;
+
+      this.destroyKeyPair();
+      return message;
+    } catch (error) {
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Message signing',
+        cleanupFn: () => this.destroyKeyPair()
+      });
     }
-
-    const signedMessage = await this.signMessageWithPrivateKey({
-      message: message.data.toString(),
-      address: this.account.address,
-      privateKey
-    });
-
-    message.signature = signedMessage.signature;
-
-    this.destroyKeyPair();
-    return message;
   }
 
   cancelAction() {
