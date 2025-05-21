@@ -22,7 +22,8 @@ import {
   ErrCannotSignSingleTransaction,
   UserCanceledPasskeyOperation,
   PasskeyAuthenticationFailed,
-  PasskeyRegistrationFailed
+  PasskeyRegistrationFailed,
+  PasskeyMismatchError
 } from './errors';
 import { client } from './lib/webauthn-prf';
 
@@ -50,6 +51,7 @@ export class PasskeyProvider {
   private static _instance: PasskeyProvider = new PasskeyProvider();
   private keyPair: { privateKey: string; publicKey: string } | undefined =
     undefined;
+  private loggedInPasskeyCredentialId: string | undefined = undefined;
   private axiosInstance = axios.create();
   private config = {
     extrasApiUrl: ''
@@ -245,6 +247,8 @@ export class PasskeyProvider {
         authenticatorType: 'extern'
       });
 
+      this.loggedInPasskeyCredentialId = registrationResponse.id;
+
       const keyPairData = await this.getUserKeyPair(extensionResults);
 
       const { data } = await this.axiosInstance.post(
@@ -298,6 +302,17 @@ export class PasskeyProvider {
         authenticatorType: 'extern'
       });
 
+      if (
+        this.loggedInPasskeyCredentialId &&
+        this.loggedInPasskeyCredentialId !== authenticationResponse.id
+      ) {
+        throw new PasskeyMismatchError();
+      }
+
+      if (!this.loggedInPasskeyCredentialId) {
+        this.loggedInPasskeyCredentialId = authenticationResponse.id;
+      }
+
       const keyPairData = await this.getUserKeyPair(extensionResults);
 
       const { data } = await this.axiosInstance.post(
@@ -343,7 +358,8 @@ export class PasskeyProvider {
       error instanceof AuthenticatorNotSupported ||
       error instanceof PasskeyAuthenticationFailed ||
       error instanceof ErrCannotSignSingleTransaction ||
-      error instanceof PasskeyRegistrationFailed
+      error instanceof PasskeyRegistrationFailed ||
+      error instanceof PasskeyMismatchError
     ) {
       throw error;
     }
@@ -387,6 +403,7 @@ export class PasskeyProvider {
 
   private disconnect() {
     this.account = { address: '' };
+    this.loggedInPasskeyCredentialId = undefined;
   }
 
   async getAddress(): Promise<string> {

@@ -48,3 +48,12 @@ export class PasskeyRegistrationFailed extends Err {
     super(message, inner);
   }
 }
+
+export class PasskeyMismatchError extends Error {
+  constructor(
+    message: string = 'Passkey mismatch: The operation cannot be completed with a different passkey than the one used to log in or that was initially registered.'
+  ) {
+    super(message);
+    this.name = 'PasskeyMismatchError';
+  }
+}
