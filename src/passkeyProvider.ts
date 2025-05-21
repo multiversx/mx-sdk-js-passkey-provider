@@ -23,7 +23,8 @@ import {
   UserCanceledPasskeyOperation,
   PasskeyAuthenticationFailed,
   PasskeyRegistrationFailed,
-  PasskeyMismatchError
+  PasskeyMismatchError,
+  PasskeyServiceUrlNotSetError
 } from './errors';
 import { client } from './lib/webauthn-prf';
 
@@ -51,7 +52,6 @@ export class PasskeyProvider {
   private static _instance: PasskeyProvider = new PasskeyProvider();
   private keyPair: { privateKey: string; publicKey: string } | undefined =
     undefined;
-  private loggedInPasskeyCredentialId: string | undefined = undefined;
   private axiosInstance = axios.create();
   private config = {
     extrasApiUrl: ''
@@ -99,9 +99,11 @@ export class PasskeyProvider {
       }
       const { token } = options;
       await this.ensureConnected();
+
       if (!this.keyPair?.privateKey || !this.keyPair?.publicKey) {
         throw new Error('Could not retrieve key pair.');
       }
+
       this.account.address = this.keyPair.publicKey;
 
       if (token) {
@@ -231,7 +233,7 @@ export class PasskeyProvider {
     token?: string;
   }) {
     if (!this.config.extrasApiUrl) {
-      throw new Error('Passkey service URL is not set');
+      throw new PasskeyServiceUrlNotSetError();
     }
 
     try {
@@ -246,8 +248,6 @@ export class PasskeyProvider {
       } = await client.register(walletName, challenge, {
         authenticatorType: 'extern'
       });
-
-      this.loggedInPasskeyCredentialId = registrationResponse.id;
 
       const keyPairData = await this.getUserKeyPair(extensionResults);
 
@@ -279,58 +279,63 @@ export class PasskeyProvider {
   }
 
   private async ensureConnected() {
-    if (this.keyPair?.privateKey || this.keyPair?.publicKey) {
-      return;
-    }
-
-    if (!this.config.extrasApiUrl) {
-      throw new Error('Passkey service URL is not set');
-    }
-
-    const {
-      data: { challenge }
-    } = await this.axiosInstance.get(
-      `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
-    );
-
-    const {
-      authentication: { extensionResults },
-      authenticationResponse
-    } = await client.authenticate([], challenge, {
-      userVerification: 'required',
-      authenticatorType: 'auto'
-    });
-
-    if (
-      this.loggedInPasskeyCredentialId &&
-      this.loggedInPasskeyCredentialId !== authenticationResponse.id
-    ) {
-      throw new PasskeyMismatchError();
-    }
-
-    if (!this.loggedInPasskeyCredentialId) {
-      this.loggedInPasskeyCredentialId = authenticationResponse.id;
-    }
-
-    const keyPairData = await this.getUserKeyPair(extensionResults);
-
-    const { data } = await this.axiosInstance.post(
-      `${this.config.extrasApiUrl}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
-      {
-        authenticationResponse: {
-          ...authenticationResponse,
-          clientExtensionResults: {}
-        },
-        challenge,
-        passKeyId: keyPairData?.publicKey
+    try {
+      if (this.keyPair?.privateKey || this.keyPair?.publicKey) {
+        return;
       }
-    );
 
-    if (!data.isVerified) {
-      throw new PasskeyAuthenticationFailed('Passkey verification failed');
+      if (!this.config.extrasApiUrl) {
+        throw new PasskeyServiceUrlNotSetError();
+      }
+
+      const {
+        data: { challenge }
+      } = await this.axiosInstance.get(
+        `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
+      );
+
+      const {
+        authentication: { extensionResults },
+        authenticationResponse
+      } = await client.authenticate([], challenge, {
+        userVerification: 'required',
+        authenticatorType: 'extern'
+      });
+
+      const keyPairData = await this.getUserKeyPair(extensionResults);
+
+      // Ensure we are signing with the same address we logge
+      if (
+        this.account.address &&
+        keyPairData?.publicKey &&
+        this.account.address !== keyPairData?.publicKey
+      ) {
+        throw new PasskeyMismatchError();
+      }
+
+      const { data } = await this.axiosInstance.post(
+        `${this.config.extrasApiUrl}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
+        {
+          authenticationResponse: {
+            ...authenticationResponse,
+            clientExtensionResults: {}
+          },
+          challenge,
+          passKeyId: keyPairData?.publicKey
+        }
+      );
+
+      if (!data.isVerified) {
+        throw new PasskeyAuthenticationFailed('Passkey verification failed');
+      }
+
+      await this.setUserKeyPair(extensionResults);
+    } catch (error) {
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Passkey authentication'
+      });
     }
-
-    await this.setUserKeyPair(extensionResults);
   }
 
   public handlePasskeyErrors({
@@ -396,7 +401,6 @@ export class PasskeyProvider {
 
   private disconnect() {
     this.account = { address: '' };
-    this.loggedInPasskeyCredentialId = undefined;
   }
 
   async getAddress(): Promise<string> {

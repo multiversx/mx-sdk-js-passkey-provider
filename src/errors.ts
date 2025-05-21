@@ -51,9 +51,15 @@ export class PasskeyRegistrationFailed extends Err {
 
 export class PasskeyMismatchError extends Error {
   constructor(
-    message: string = 'Passkey mismatch: The operation cannot be completed with a different passkey than the one used to log in or that was initially registered.'
+    message = 'Passkey mismatch: The operation cannot be completed with a different passkey than the one used to log in or that was initially registered.'
   ) {
     super(message);
     this.name = 'PasskeyMismatchError';
+  }
+}
+
+export class PasskeyServiceUrlNotSetError extends Err {
+  public constructor() {
+    super('Passkey service URL is not set.');
   }
 }
