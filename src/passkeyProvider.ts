@@ -8,7 +8,6 @@ import {
   UserSigner
 } from '@multiversx/sdk-core';
 import * as ed from '@noble/ed25519';
-import { getPublicKey } from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha2';
 
 import axios from 'axios';
@@ -197,7 +196,7 @@ export class PasskeyProvider {
   // Generate the Ed25519 key pair
   private generateEd25519KeyPair(privateKeySeed: Uint8Array) {
     const privateKey = privateKeySeed;
-    const publicKey = getPublicKey(privateKey);
+    const publicKey = ed.getPublicKey(privateKey);
 
     return {
       publicKey,
@@ -432,7 +431,7 @@ export class PasskeyProvider {
       const privateKey = this.keyPair?.privateKey;
 
       if (!privateKey) {
-        throw new Error('Unable to sign transactions');
+        throw new Error('Private key missing – unable to sign transactions');
       }
 
       const signer = new UserSigner(UserSecretKey.fromString(privateKey));
