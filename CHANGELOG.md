@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [[3.0.3](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/24)] - 2025-05-23
+
 - [Update passkey provider with new error handling and tests](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/23)
 
 ## [[3.0.2](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/22)] - 2025-04-15
