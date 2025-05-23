@@ -68,6 +68,7 @@ export class PasskeyProvider {
     if (!this.abortController) {
       this.abortController = new AbortController();
     }
+
     return this.abortController.signal;
   }
 
