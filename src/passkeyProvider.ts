@@ -372,7 +372,7 @@ export class PasskeyProvider {
 
     if (
       error instanceof TypeError ||
-      (error instanceof Error && error.message.includes('prf'))
+      (error instanceof Error && error.message.toLowerCase().includes('prf'))
     ) {
       throw new AuthenticatorNotSupported();
     }
