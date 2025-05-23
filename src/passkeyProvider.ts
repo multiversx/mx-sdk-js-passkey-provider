@@ -62,6 +62,18 @@ export class PasskeyProvider {
   private config = {
     extrasApiUrl: ''
   };
+  private abortController: AbortController | null = null;
+
+  private getAbortSignal() {
+    if (!this.abortController) {
+      this.abortController = new AbortController();
+    }
+    return this.abortController.signal;
+  }
+
+  private resetAbortController() {
+    this.abortController = null;
+  }
 
   private constructor() {
     if (PasskeyProvider._instance) {
@@ -69,6 +81,7 @@ export class PasskeyProvider {
         'Error: Instantiation failed: Use PasskeyProvider.getInstance() instead of new.'
       );
     }
+
     PasskeyProvider._instance = this;
   }
 
@@ -129,12 +142,13 @@ export class PasskeyProvider {
       }
 
       this.destroyKeyPair();
-
+      this.resetAbortController();
       return {
         address: this.account.address,
         signature: this.account.signature
       };
     } catch (error) {
+      this.resetAbortController();
       throw error;
     }
   }
@@ -243,10 +257,12 @@ export class PasskeyProvider {
     }
 
     try {
+      const signal = this.getAbortSignal();
       const {
         data: { challenge }
       } = await this.axiosInstance.get(
-        `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
+        `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`,
+        { signal }
       );
       const {
         registration: { extensionResults },
@@ -266,7 +282,8 @@ export class PasskeyProvider {
           },
           challenge,
           passKeyId: keyPairData?.publicKey
-        }
+        },
+        { signal }
       );
 
       if (!data.isVerified) {
@@ -274,9 +291,10 @@ export class PasskeyProvider {
       }
 
       await this.setUserKeyPair(extensionResults);
-
+      this.resetAbortController();
       return this.login({ token });
     } catch (error) {
+      this.resetAbortController();
       this.handlePasskeyErrors({
         error,
         operation: 'Passkey registration'
@@ -293,11 +311,12 @@ export class PasskeyProvider {
       if (!this.config.extrasApiUrl) {
         throw new PasskeyServiceUrlNotSetError();
       }
-
+      const signal = this.getAbortSignal();
       const {
         data: { challenge }
       } = await this.axiosInstance.get(
-        `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
+        `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`,
+        { signal }
       );
 
       const {
@@ -328,7 +347,8 @@ export class PasskeyProvider {
           },
           challenge,
           passKeyId: keyPairData?.publicKey
-        }
+        },
+        { signal }
       );
 
       if (!data.isVerified) {
@@ -337,6 +357,7 @@ export class PasskeyProvider {
 
       await this.setUserKeyPair(extensionResults);
     } catch (error) {
+      this.resetAbortController();
       this.handlePasskeyErrors({
         error,
         operation: 'Passkey authentication'
@@ -352,8 +373,6 @@ export class PasskeyProvider {
     if (cleanupFn) {
       cleanupFn();
     }
-
-    console.error(error);
 
     if (
       error instanceof UserCanceledPasskeyOperation ||
@@ -377,6 +396,8 @@ export class PasskeyProvider {
       throw new AuthenticatorNotSupported();
     }
 
+    console.error(error);
+
     throw new Error(
       `${operation} failed: ${
         error instanceof Error ? error.message : 'Unknown error'
@@ -392,6 +413,7 @@ export class PasskeyProvider {
     if (!this.initialized) {
       throw new Error('Passkey provider is not initialised, call init() first');
     }
+
     try {
       this.disconnect();
     } catch (error) {
@@ -430,8 +452,10 @@ export class PasskeyProvider {
         throw new ErrCannotSignSingleTransaction();
       }
       this.destroyKeyPair();
+      this.resetAbortController();
       return signedTransactions[0];
     } catch (error) {
+      this.resetAbortController();
       this.handlePasskeyErrors({
         error,
         operation: 'Transaction signing',
@@ -461,8 +485,10 @@ export class PasskeyProvider {
       }
 
       this.destroyKeyPair();
+      this.resetAbortController();
       return transactions;
     } catch (error) {
+      this.resetAbortController();
       this.handlePasskeyErrors({
         error,
         operation: 'Transaction signing',
@@ -489,8 +515,10 @@ export class PasskeyProvider {
       message.signature = signedMessage.signature;
 
       this.destroyKeyPair();
+      this.resetAbortController();
       return message;
     } catch (error) {
+      this.resetAbortController();
       this.handlePasskeyErrors({
         error,
         operation: 'Message signing',
@@ -500,6 +528,11 @@ export class PasskeyProvider {
   }
 
   cancelAction() {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.resetAbortController();
+    }
+
     return true;
   }
 }

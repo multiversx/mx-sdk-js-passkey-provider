@@ -163,4 +163,30 @@ describe('PasskeyProvider', () => {
       expect(cleanupFn).toHaveBeenCalledTimes(1);
     });
   });
+
+  test('aborts login when cancelAction is called', async () => {
+    await passkeyProvider.init();
+    passkeyProvider.setPasskeyServiceUrl('https://multiversx.com');
+
+    const originalGet = passkeyProvider['axiosInstance'].get;
+    passkeyProvider['axiosInstance'].get = jest.fn((...args) => {
+      const config = args[1] || {};
+      return new Promise((resolve, reject) => {
+        config.signal?.addEventListener?.('abort', () => {
+          reject(new Error('canceled'));
+        });
+
+        setTimeout(() => resolve({ data: { challenge: 'test' } } as any), 1000);
+      });
+    });
+
+    const loginPromise = passkeyProvider.login();
+
+    setTimeout(() => {
+      passkeyProvider.cancelAction();
+    }, 100);
+
+    await expect(loginPromise).rejects.toThrow(/canceled|abort|User canceled/i);
+    passkeyProvider['axiosInstance'].get = originalGet;
+  });
 });
