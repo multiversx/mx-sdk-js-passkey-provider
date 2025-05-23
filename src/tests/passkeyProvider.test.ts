@@ -186,7 +186,9 @@ describe('PasskeyProvider', () => {
       passkeyProvider.cancelAction();
     }, 100);
 
-    await expect(loginPromise).rejects.toThrow(/canceled|abort|User canceled/i);
+    await expect(loginPromise).rejects.toThrow(
+      /cancell?ed|abort|User cancell?ed/i
+    );
     passkeyProvider['axiosInstance'].get = originalGet;
   });
 });

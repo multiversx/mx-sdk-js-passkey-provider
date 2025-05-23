@@ -118,7 +118,7 @@ export class PasskeyProvider {
         );
       }
       const { token } = options;
-      await this.ensureConnectedWithTimeout();
+      await this.raceWithAbort(this.ensureConnected());
 
       if (!this.keyPair?.privateKey || !this.keyPair?.publicKey) {
         throw new Error('Could not retrieve key pair.');
@@ -269,9 +269,12 @@ export class PasskeyProvider {
       const {
         registration: { extensionResults },
         registrationResponse
-      } = await client.register(walletName, challenge, {
-        authenticatorType: 'extern'
-      });
+      } = await this.raceWithAbort(
+        client.register(walletName, challenge, {
+          authenticatorType: 'extern',
+          signal
+        })
+      );
 
       const keyPairData = await this.getUserKeyPair(extensionResults);
 
@@ -328,10 +331,13 @@ export class PasskeyProvider {
       const {
         authentication: { extensionResults },
         authenticationResponse
-      } = await client.authenticate([], challenge, {
-        userVerification: 'required',
-        authenticatorType: 'extern'
-      });
+      } = await this.raceWithAbort(
+        client.authenticate([], challenge, {
+          userVerification: 'required',
+          authenticatorType: 'extern',
+          signal
+        })
+      );
 
       const keyPairData = await this.getUserKeyPair(extensionResults);
 
@@ -375,7 +381,7 @@ export class PasskeyProvider {
     }
   }
 
-  private async ensureConnectedWithTimeout(): Promise<void> {
+  private async raceWithAbort<T>(promise: Promise<T>): Promise<T> {
     const signal = this.getAbortSignal();
 
     const abortPromise = new Promise<never>((_, reject) => {
@@ -384,7 +390,7 @@ export class PasskeyProvider {
       });
     });
 
-    return Promise.race([this.ensureConnected(), abortPromise]);
+    return Promise.race([promise, abortPromise]);
   }
 
   public handlePasskeyErrors({
@@ -470,7 +476,7 @@ export class PasskeyProvider {
 
   async signTransaction(transaction: Transaction): Promise<Transaction> {
     try {
-      await this.ensureConnectedWithTimeout();
+      await this.raceWithAbort(this.ensureConnected());
 
       const signedTransactions = await this.signTransactions([transaction]);
 
@@ -492,7 +498,7 @@ export class PasskeyProvider {
 
   async signTransactions(transactions: Transaction[]): Promise<Transaction[]> {
     try {
-      await this.ensureConnectedWithTimeout();
+      await this.raceWithAbort(this.ensureConnected());
 
       const privateKey = this.keyPair?.privateKey;
 
@@ -525,7 +531,7 @@ export class PasskeyProvider {
 
   async signMessage(message: Message): Promise<Message> {
     try {
-      await this.ensureConnectedWithTimeout();
+      await this.raceWithAbort(this.ensureConnected());
       const privateKey = this.keyPair?.privateKey;
 
       if (!privateKey) {

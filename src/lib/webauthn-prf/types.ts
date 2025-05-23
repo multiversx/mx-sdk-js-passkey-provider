@@ -12,6 +12,7 @@ export interface AuthenticateOptions {
   timeout?: number;
   debug?: boolean;
   mediation?: CredentialMediationRequirement;
+  signal?: AbortSignal;
 }
 
 export interface AuthenticatorResponseWithAlgorithm
