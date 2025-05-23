@@ -304,7 +304,7 @@ export class PasskeyProvider {
 
       const keyPairData = await this.getUserKeyPair(extensionResults);
 
-      // Ensure we are signing with the same address we logge
+      // Ensure we are signing with the same address we logged in with
       if (
         this.account.address &&
         keyPairData?.publicKey &&
