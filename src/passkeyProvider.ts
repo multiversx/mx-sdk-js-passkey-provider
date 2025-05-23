@@ -3,12 +3,12 @@ import {
   Message,
   MessageComputer,
   Transaction,
+  TransactionComputer,
   UserSecretKey,
   UserSigner
 } from '@multiversx/sdk-core';
 import * as ed from '@noble/ed25519';
-import { getPublicKey } from '@noble/ed25519';
-import { sha512 } from '@noble/hashes/sha512';
+import { sha512 } from '@noble/hashes/sha2';
 
 import axios from 'axios';
 import {
@@ -19,7 +19,12 @@ import {
 } from './constants';
 import {
   AuthenticatorNotSupported,
-  ErrCannotSignSingleTransaction
+  ErrCannotSignSingleTransaction,
+  UserCanceledPasskeyOperation,
+  PasskeyAuthenticationFailed,
+  PasskeyRegistrationFailed,
+  PasskeyMismatchError,
+  PasskeyServiceUrlNotSetError
 } from './errors';
 import { client } from './lib/webauthn-prf';
 
@@ -29,10 +34,16 @@ interface IPasskeyAccount {
   signature?: string;
 }
 
-interface SignMessageParams {
+interface ISignMessageParams {
   message: string;
   address?: string;
   privateKey: string;
+}
+
+interface IHandlePasskeyErrorsParams {
+  error: unknown;
+  operation: string;
+  cleanupFn?: () => void;
 }
 
 // By setting this property, we're telling the library
@@ -51,6 +62,19 @@ export class PasskeyProvider {
   private config = {
     extrasApiUrl: ''
   };
+  private abortController: AbortController | null = null;
+
+  private getAbortSignal() {
+    if (!this.abortController) {
+      this.abortController = new AbortController();
+    }
+
+    return this.abortController.signal;
+  }
+
+  private resetAbortController() {
+    this.abortController = null;
+  }
 
   private constructor() {
     if (PasskeyProvider._instance) {
@@ -58,6 +82,7 @@ export class PasskeyProvider {
         'Error: Instantiation failed: Use PasskeyProvider.getInstance() instead of new.'
       );
     }
+
     PasskeyProvider._instance = this;
   }
 
@@ -93,10 +118,12 @@ export class PasskeyProvider {
         );
       }
       const { token } = options;
-      await this.ensureConnected();
+      await this.raceWithAbort(this.ensureConnected());
+
       if (!this.keyPair?.privateKey || !this.keyPair?.publicKey) {
         throw new Error('Could not retrieve key pair.');
       }
+
       this.account.address = this.keyPair.publicKey;
 
       if (token) {
@@ -116,12 +143,13 @@ export class PasskeyProvider {
       }
 
       this.destroyKeyPair();
-
+      this.resetAbortController();
       return {
         address: this.account.address,
         signature: this.account.signature
       };
     } catch (error) {
+      this.resetAbortController();
       throw error;
     }
   }
@@ -134,7 +162,7 @@ export class PasskeyProvider {
     message,
     address,
     privateKey
-  }: SignMessageParams): Promise<Message> {
+  }: ISignMessageParams): Promise<Message> {
     const signer = new UserSigner(UserSecretKey.fromString(privateKey));
 
     const msg = new Message({
@@ -193,7 +221,7 @@ export class PasskeyProvider {
   // Generate the Ed25519 key pair
   private generateEd25519KeyPair(privateKeySeed: Uint8Array) {
     const privateKey = privateKeySeed;
-    const publicKey = getPublicKey(privateKey);
+    const publicKey = ed.getPublicKey(privateKey);
 
     return {
       publicKey,
@@ -226,71 +254,101 @@ export class PasskeyProvider {
     token?: string;
   }) {
     if (!this.config.extrasApiUrl) {
-      throw new Error('Passkey service URL is not set');
+      throw new PasskeyServiceUrlNotSetError();
     }
 
-    const {
-      data: { challenge }
-    } = await this.axiosInstance.get(
-      `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
-    );
-    const {
-      registration: { extensionResults },
-      registrationResponse
-    } = await client.register(walletName, challenge, {
-      authenticatorType: 'extern'
-    });
+    try {
+      const signal = this.getAbortSignal();
+      const {
+        data: { challenge }
+      } = await this.axiosInstance.get(
+        `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`,
+        { signal }
+      );
 
-    const keyPairData = await this.getUserKeyPair(extensionResults);
+      const {
+        registration: { extensionResults },
+        registrationResponse
+      } = await this.raceWithAbort(
+        client.register(walletName, challenge, {
+          authenticatorType: 'extern',
+          signal
+        })
+      );
 
-    const { data } = await this.axiosInstance.post(
-      `${this.config.extrasApiUrl}${PASSKEY_REGISTER_ENDPOINT}`,
-      {
-        registrationResponse: {
-          ...registrationResponse,
-          clientExtensionResults: {}
+      const keyPairData = await this.getUserKeyPair(extensionResults);
+
+      const { data } = await this.axiosInstance.post(
+        `${this.config.extrasApiUrl}${PASSKEY_REGISTER_ENDPOINT}`,
+        {
+          registrationResponse: {
+            ...registrationResponse,
+            clientExtensionResults: {}
+          },
+          challenge,
+          passKeyId: keyPairData?.publicKey
         },
-        challenge,
-        passKeyId: keyPairData?.publicKey
+        { signal }
+      );
+
+      if (!data.isVerified) {
+        throw new PasskeyRegistrationFailed('Passkey verification failed');
       }
-    );
 
-    if (!data.isVerified) {
-      throw new Error('Passkey verification failed');
+      if (signal.aborted) {
+        throw new DOMException('Operation was cancelled', 'AbortError');
+      }
+
+      await this.setUserKeyPair(extensionResults);
+      this.resetAbortController();
+      return this.login({ token });
+    } catch (error) {
+      this.resetAbortController();
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Passkey registration'
+      });
     }
-
-    await this.setUserKeyPair(extensionResults);
-
-    return this.login({ token });
   }
 
   private async ensureConnected() {
-    if (this.keyPair?.privateKey || this.keyPair?.publicKey) {
-      return;
-    }
-
-    if (!this.config.extrasApiUrl) {
-      throw new Error('Passkey service URL is not set');
-    }
-
-    const {
-      data: { challenge }
-    } = await this.axiosInstance.get(
-      `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`
-    );
-
-    let inputKeyMaterial: Uint8Array;
     try {
+      if (this.keyPair?.privateKey || this.keyPair?.publicKey) {
+        return;
+      }
+
+      if (!this.config.extrasApiUrl) {
+        throw new PasskeyServiceUrlNotSetError();
+      }
+      const signal = this.getAbortSignal();
+      const {
+        data: { challenge }
+      } = await this.axiosInstance.get(
+        `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`,
+        { signal }
+      );
+
       const {
         authentication: { extensionResults },
         authenticationResponse
-      } = await client.authenticate([], challenge, {
-        userVerification: 'required',
-        authenticatorType: 'extern'
-      });
-      inputKeyMaterial = extensionResults;
+      } = await this.raceWithAbort(
+        client.authenticate([], challenge, {
+          userVerification: 'required',
+          authenticatorType: 'extern',
+          signal
+        })
+      );
 
-      const keyPairData = await this.getUserKeyPair(inputKeyMaterial);
+      const keyPairData = await this.getUserKeyPair(extensionResults);
+
+      // Ensure we are signing with the same address we logged in with
+      if (
+        this.account.address &&
+        keyPairData?.publicKey &&
+        this.account.address !== keyPairData?.publicKey
+      ) {
+        throw new PasskeyMismatchError();
+      }
 
       const { data } = await this.axiosInstance.post(
         `${this.config.extrasApiUrl}${PASSKEY_AUTHENTICATE_ENDPOINT}`,
@@ -301,16 +359,82 @@ export class PasskeyProvider {
           },
           challenge,
           passKeyId: keyPairData?.publicKey
-        }
+        },
+        { signal }
       );
 
       if (!data.isVerified) {
-        throw new Error('Passkey verification failed');
+        throw new PasskeyAuthenticationFailed('Passkey verification failed');
       }
-      await this.setUserKeyPair(inputKeyMaterial);
+
+      if (signal.aborted) {
+        throw new DOMException('Operation was cancelled', 'AbortError');
+      }
+
+      await this.setUserKeyPair(extensionResults);
     } catch (error) {
+      this.resetAbortController();
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Passkey authentication'
+      });
+    }
+  }
+
+  private async raceWithAbort<T>(promise: Promise<T>): Promise<T> {
+    const signal = this.getAbortSignal();
+
+    const abortPromise = new Promise<never>((_, reject) => {
+      signal.addEventListener('abort', () => {
+        reject(new DOMException('Operation was cancelled', 'AbortError'));
+      });
+    });
+
+    return Promise.race([promise, abortPromise]);
+  }
+
+  public handlePasskeyErrors({
+    error,
+    operation,
+    cleanupFn
+  }: IHandlePasskeyErrorsParams): never {
+    if (cleanupFn) {
+      cleanupFn();
+    }
+
+    if (
+      error instanceof UserCanceledPasskeyOperation ||
+      error instanceof AuthenticatorNotSupported ||
+      error instanceof PasskeyAuthenticationFailed ||
+      error instanceof ErrCannotSignSingleTransaction ||
+      error instanceof PasskeyRegistrationFailed ||
+      error instanceof PasskeyMismatchError
+    ) {
+      throw error;
+    }
+
+    if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      throw new UserCanceledPasskeyOperation();
+    }
+
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new UserCanceledPasskeyOperation();
+    }
+
+    if (
+      error instanceof TypeError ||
+      (error instanceof Error && error.message.toLowerCase().includes('prf'))
+    ) {
       throw new AuthenticatorNotSupported();
     }
+
+    console.error(error);
+
+    throw new Error(
+      `${operation} failed: ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }`
+    );
   }
 
   public async isExistingUser(email: string) {
@@ -321,6 +445,7 @@ export class PasskeyProvider {
     if (!this.initialized) {
       throw new Error('Passkey provider is not initialised, call init() first');
     }
+
     try {
       this.disconnect();
     } catch (error) {
@@ -350,63 +475,96 @@ export class PasskeyProvider {
   }
 
   async signTransaction(transaction: Transaction): Promise<Transaction> {
-    await this.ensureConnected();
+    try {
+      await this.raceWithAbort(this.ensureConnected());
 
-    const signedTransactions = await this.signTransactions([transaction]);
+      const signedTransactions = await this.signTransactions([transaction]);
 
-    if (signedTransactions.length != 1) {
-      throw new ErrCannotSignSingleTransaction();
+      if (signedTransactions.length != 1) {
+        throw new ErrCannotSignSingleTransaction();
+      }
+      this.destroyKeyPair();
+      this.resetAbortController();
+      return signedTransactions[0];
+    } catch (error) {
+      this.resetAbortController();
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Transaction signing',
+        cleanupFn: () => this.destroyKeyPair()
+      });
     }
-    this.destroyKeyPair();
-    return signedTransactions[0];
   }
 
   async signTransactions(transactions: Transaction[]): Promise<Transaction[]> {
-    await this.ensureConnected();
-
-    const privateKey = this.keyPair?.privateKey;
-
-    if (!privateKey) {
-      throw new Error('Unable to sign transactions');
-    }
-
     try {
+      await this.raceWithAbort(this.ensureConnected());
+
+      const privateKey = this.keyPair?.privateKey;
+
+      if (!privateKey) {
+        throw new Error('Private key missing – unable to sign transactions');
+      }
+
       const signer = new UserSigner(UserSecretKey.fromString(privateKey));
+      const transactionComputer = new TransactionComputer();
 
       for (const transaction of transactions) {
-        const signature = await signer.sign(transaction.serializeForSigning());
-        transaction.applySignature(signature);
+        const bytesToSign =
+          transactionComputer.computeBytesForSigning(transaction);
+        const signature = await signer.sign(bytesToSign);
+        transaction.signature = new Uint8Array(signature);
       }
+
       this.destroyKeyPair();
+      this.resetAbortController();
       return transactions;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      this.destroyKeyPair();
-      throw new Error(`Transaction canceled: ${error.message}.`);
+    } catch (error) {
+      this.resetAbortController();
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Transaction signing',
+        cleanupFn: () => this.destroyKeyPair()
+      });
     }
   }
 
   async signMessage(message: Message): Promise<Message> {
-    await this.ensureConnected();
-    const privateKey = this.keyPair?.privateKey;
+    try {
+      await this.raceWithAbort(this.ensureConnected());
+      const privateKey = this.keyPair?.privateKey;
 
-    if (!privateKey) {
-      throw new Error('Unable to sign message');
+      if (!privateKey) {
+        throw new Error('Unable to sign message');
+      }
+
+      const signedMessage = await this.signMessageWithPrivateKey({
+        message: message.data.toString(),
+        address: this.account.address,
+        privateKey
+      });
+
+      message.signature = signedMessage.signature;
+
+      this.destroyKeyPair();
+      this.resetAbortController();
+      return message;
+    } catch (error) {
+      this.resetAbortController();
+      this.handlePasskeyErrors({
+        error,
+        operation: 'Message signing',
+        cleanupFn: () => this.destroyKeyPair()
+      });
     }
-
-    const signedMessage = await this.signMessageWithPrivateKey({
-      message: message.data.toString(),
-      address: this.account.address,
-      privateKey
-    });
-
-    message.signature = signedMessage.signature;
-
-    this.destroyKeyPair();
-    return message;
   }
 
   cancelAction() {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.resetAbortController();
+    }
+
     return true;
   }
 }

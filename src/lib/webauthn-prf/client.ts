@@ -152,7 +152,8 @@ export async function register(
   }
 
   const credential = (await navigator.credentials.create({
-    publicKey: creationOptions as any
+    publicKey: creationOptions as any,
+    signal: options.signal
   })) as PublicKeyCredential;
 
   if (options.debug) {
@@ -301,7 +302,8 @@ export async function authenticate(
 
   const auth = (await navigator.credentials.get({
     publicKey: authOptions as any,
-    mediation: options.mediation
+    mediation: options.mediation,
+    signal: options.signal
   })) as PublicKeyCredential;
 
   if (options.debug) {
