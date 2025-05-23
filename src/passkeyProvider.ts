@@ -118,7 +118,7 @@ export class PasskeyProvider {
         );
       }
       const { token } = options;
-      await this.ensureConnected();
+      await this.ensureConnectedWithTimeout();
 
       if (!this.keyPair?.privateKey || !this.keyPair?.publicKey) {
         throw new Error('Could not retrieve key pair.');
@@ -375,6 +375,18 @@ export class PasskeyProvider {
     }
   }
 
+  private async ensureConnectedWithTimeout(): Promise<void> {
+    const signal = this.getAbortSignal();
+
+    const abortPromise = new Promise<never>((_, reject) => {
+      signal.addEventListener('abort', () => {
+        reject(new DOMException('Operation was cancelled', 'AbortError'));
+      });
+    });
+
+    return Promise.race([this.ensureConnected(), abortPromise]);
+  }
+
   public handlePasskeyErrors({
     error,
     operation,
@@ -458,7 +470,7 @@ export class PasskeyProvider {
 
   async signTransaction(transaction: Transaction): Promise<Transaction> {
     try {
-      await this.ensureConnected();
+      await this.ensureConnectedWithTimeout();
 
       const signedTransactions = await this.signTransactions([transaction]);
 
@@ -480,7 +492,7 @@ export class PasskeyProvider {
 
   async signTransactions(transactions: Transaction[]): Promise<Transaction[]> {
     try {
-      await this.ensureConnected();
+      await this.ensureConnectedWithTimeout();
 
       const privateKey = this.keyPair?.privateKey;
 
@@ -513,7 +525,7 @@ export class PasskeyProvider {
 
   async signMessage(message: Message): Promise<Message> {
     try {
-      await this.ensureConnected();
+      await this.ensureConnectedWithTimeout();
       const privateKey = this.keyPair?.privateKey;
 
       if (!privateKey) {
