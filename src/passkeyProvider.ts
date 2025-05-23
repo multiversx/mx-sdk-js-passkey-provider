@@ -34,10 +34,16 @@ interface IPasskeyAccount {
   signature?: string;
 }
 
-interface SignMessageParams {
+interface ISignMessageParams {
   message: string;
   address?: string;
   privateKey: string;
+}
+
+interface IHandlePasskeyErrorsParams {
+  error: unknown;
+  operation: string;
+  cleanupFn?: () => void;
 }
 
 // By setting this property, we're telling the library
@@ -141,7 +147,7 @@ export class PasskeyProvider {
     message,
     address,
     privateKey
-  }: SignMessageParams): Promise<Message> {
+  }: ISignMessageParams): Promise<Message> {
     const signer = new UserSigner(UserSecretKey.fromString(privateKey));
 
     const msg = new Message({
@@ -342,11 +348,7 @@ export class PasskeyProvider {
     error,
     operation,
     cleanupFn
-  }: {
-    error: unknown;
-    operation: string;
-    cleanupFn?: () => void;
-  }): never {
+  }: IHandlePasskeyErrorsParams): never {
     if (cleanupFn) {
       cleanupFn();
     }
