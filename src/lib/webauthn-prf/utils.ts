@@ -11,7 +11,7 @@ export function toBuffer(txt: string): ArrayBuffer {
 }
 
 export function parseBuffer(buffer: ArrayBuffer): string {
-  return String.fromCharCode(...new Uint8Array(buffer));
+  return String.fromCharCode(...Array.from(new Uint8Array(buffer)));
 }
 
 export function isBase64url(txt: string): boolean {
@@ -33,7 +33,7 @@ export async function sha256(buffer: ArrayBuffer): Promise<ArrayBuffer> {
 }
 
 export function bufferToHex(buffer: ArrayBuffer): string {
-  return [...new Uint8Array(buffer)]
+  return Array.from(new Uint8Array(buffer))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }

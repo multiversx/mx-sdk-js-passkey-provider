@@ -351,6 +351,8 @@ export class PasskeyProvider {
       cleanupFn();
     }
 
+    console.error(error);
+
     if (
       error instanceof UserCanceledPasskeyOperation ||
       error instanceof AuthenticatorNotSupported ||
@@ -372,8 +374,6 @@ export class PasskeyProvider {
     ) {
       throw new AuthenticatorNotSupported();
     }
-
-    console.error(error);
 
     throw new Error(
       `${operation} failed: ${
