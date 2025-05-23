@@ -264,6 +264,7 @@ export class PasskeyProvider {
         `${this.config.extrasApiUrl}${PASSKEY_CHALLENGE_ENDPOINT}`,
         { signal }
       );
+
       const {
         registration: { extensionResults },
         registrationResponse
@@ -288,6 +289,10 @@ export class PasskeyProvider {
 
       if (!data.isVerified) {
         throw new PasskeyRegistrationFailed('Passkey verification failed');
+      }
+
+      if (signal.aborted) {
+        throw new DOMException('Operation was cancelled', 'AbortError');
       }
 
       await this.setUserKeyPair(extensionResults);
@@ -355,6 +360,10 @@ export class PasskeyProvider {
         throw new PasskeyAuthenticationFailed('Passkey verification failed');
       }
 
+      if (signal.aborted) {
+        throw new DOMException('Operation was cancelled', 'AbortError');
+      }
+
       await this.setUserKeyPair(extensionResults);
     } catch (error) {
       this.resetAbortController();
@@ -386,6 +395,10 @@ export class PasskeyProvider {
     }
 
     if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      throw new UserCanceledPasskeyOperation();
+    }
+
+    if (error instanceof DOMException && error.name === 'AbortError') {
       throw new UserCanceledPasskeyOperation();
     }
 
