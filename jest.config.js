@@ -3,15 +3,27 @@ module.exports = {
   testEnvironment: 'jsdom',
   testTimeout: 10000,
   moduleDirectories: ['node_modules', 'src'],
+  modulePaths: ['<rootDir>/src'],
   roots: ['<rootDir>/src'],
   transform: {
-    '^.+\\.[t|j]sx?$': 'ts-jest'
+    '^.+\\.(ts|js|tsx|jsx)$': ['@swc/jest']
   },
-  setupFilesAfterEnv: ['<rootDir>/src/tests/setup.ts'],
-  transformIgnorePatterns: [
-    '/node_modules/(?!uuid|@multiversx|@noble)'
+  setupFilesAfterEnv: ['<rootDir>/src/setupTests.js'],
+  transformIgnorePatterns: ['node_modules/(^.+\\\\.(ts|js)$)'],
+  testMatch: [
+    '**/__tests__/**/*.[jt]s?(x)',
+    '**/?(*.)+(spec|test).[jt]s?(x)'
   ],
-  moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1'
-  }
+  moduleFileExtensions: [
+    // Place tsx and ts to beginning as suggestion from Jest team
+    // https://jestjs.io/docs/configuration#modulefileextensions-arraystring
+    'tsx',
+    'ts',
+    'web.js',
+    'js',
+    'web.ts',
+    'web.tsx',
+    'json',
+    'node'
+  ]
 };
