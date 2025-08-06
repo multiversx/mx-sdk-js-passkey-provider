@@ -8,7 +8,7 @@ import {
   UserSigner
 } from '@multiversx/sdk-core';
 import * as ed from '@noble/ed25519';
-import { sha512 } from '@noble/hashes/sha2';
+import { sha512 } from '@noble/hashes/sha512';
 
 import axios from 'axios';
 import {
@@ -69,7 +69,7 @@ export class PasskeyProvider {
       this.abortController = new AbortController();
     }
 
-    return this.abortController.signal;
+    return (this.abortController as AbortController).signal;
   }
 
   private resetAbortController() {
@@ -238,7 +238,7 @@ export class PasskeyProvider {
 
     return {
       privateKey: userSecretKey.hex(),
-      publicKey: address.bech32()
+      publicKey: address.toBech32()
     };
   }
 
