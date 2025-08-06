@@ -15,8 +15,8 @@ import {
   PublicKeyCredentialRequestOptions,
   RegisterOptions,
   RegistrationEncoded
-} from './types.js';
-import * as utils from './utils.js';
+} from './types';
+import * as utils from './utils';
 
 //generated with crypto.getRandomValues
 const randomness =
