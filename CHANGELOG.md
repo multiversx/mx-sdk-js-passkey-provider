@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [[3.0.5](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/27)] - 2025-12-03
+
+- [Enforce sdk-core v15 in devDependencies](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/26)
+
 ## [[3.0.4](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/26)] - 2025-08-06
 
 - [Fixed noble hashes and migrated to pnpm](https://github.com/multiversx/mx-sdk-js-passkey-provider/pull/25)

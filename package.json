@@ -1,6 +1,6 @@
 {
   "name": "@multiversx/sdk-passkey-provider",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "description": "Signing provider for dApps: Passkey Provider",
   "main": "out/index.js",
   "types": "out/index.d.js",
@@ -15,12 +15,14 @@
     "pretest": "npm run compile",
     "prepare": "npm run compile",
     "lint": "eslint --fix --ext js,ts src",
-    "test": "jest"
+    "test": "jest",
+    "unpublish-verdaccio": "npm unpublish @multiversx/sdk-passkey-provider --force --registry http://localhost:4873",
+    "publish-verdaccio": "npm run unpublish-verdaccio && npm run compile && npm publish --registry http://localhost:4873/"
   },
   "author": "MultiversX",
   "license": "GPL-3.0-or-later",
   "devDependencies": {
-    "@multiversx/sdk-core": "^14.0.0 || ^15.0.0",
+    "@multiversx/sdk-core": "^15.0.0",
     "@swc/core": "^1.4.17",
     "@swc/jest": "^0.2.36",
     "@types/jest": "29.5.13",
@@ -43,8 +45,8 @@
     "typescript": "5.4.3"
   },
   "peerDependencies": {
-    "@multiversx/sdk-core": "^14.x",
-    "axios": ">=1.7.4"
+    "@multiversx/sdk-core": "^14.x || ^15.x",
+    "axios": ">=1.10.0"
   },
   "dependencies": {
     "@noble/ed25519": "2.1.0",
